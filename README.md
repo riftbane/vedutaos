@@ -53,6 +53,11 @@ Everything here is standard-library Go, built without cgo, and the tests need no
 go test ./...
 ```
 
+The console can also be run end to end before any board arrives — on an emulated ARM64
+machine, or on a spare Linux laptop at a text console. What that proves, what it cannot
+(the SPI panel, and the Pi 5 itself, are not emulated by anything), and the exact commands
+for a Windows PC are in [testing without hardware](docs/testing-without-hardware.md).
+
 ## Licence
 
 MIT.
