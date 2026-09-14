@@ -82,6 +82,10 @@ func TestFindFirmware(t *testing.T) {
 	if got, err := findFirmware(filepath.Join("qemu", "qemu-system-aarch64.exe")); err != nil || got != win {
 		t.Errorf("beside QEMU: %q %v", got, err)
 	}
+	withHost(t, "windows", "amd64")
+	if got, err := findFirmware(`D:\tools\qemu\qemu-system-aarch64.exe`); err != nil || got != "edk2-aarch64-code.fd" {
+		t.Errorf("Windows, laid out some other way: %q %v (QEMU finds a bare name in its own data folder)", got, err)
+	}
 	withHost(t, "linux", "amd64")
 	if _, err := findFirmware("/usr/bin/qemu-system-aarch64"); err == nil || !strings.Contains(err.Error(), "qemu-efi-aarch64") {
 		t.Errorf("no firmware: %v", err)

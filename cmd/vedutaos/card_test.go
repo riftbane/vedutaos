@@ -220,6 +220,9 @@ func TestUsage(t *testing.T) {
 	if code, _, _ := runTool(t, "flash"); code != 2 {
 		t.Error("unknown command")
 	}
+	if code, out, _ := runTool(t, "version"); code != 0 || out != "vedutaos dev\n" {
+		t.Errorf("version: %d %q", code, out)
+	}
 	if code, _, _ := runTool(t, "card"); code != 2 {
 		t.Error("card without a folder")
 	}

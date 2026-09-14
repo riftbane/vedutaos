@@ -271,6 +271,11 @@ func findFirmware(qemu string) (string, error) {
 			return filepath.Clean(c), nil
 		}
 	}
+	if goos == "windows" {
+		// QEMU looks for a bare -bios name in its own data folder, wherever this build of it
+		// keeps that; every Windows build ships this file.
+		return "edk2-aarch64-code.fd", nil
+	}
 	return "", errors.New("no UEFI firmware for QEMU's arm64 machine found (edk2-aarch64-code.fd or QEMU_EFI.fd; on Debian and Ubuntu install qemu-efi-aarch64); pass --firmware")
 }
 

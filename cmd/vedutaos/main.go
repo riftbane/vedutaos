@@ -17,6 +17,9 @@ import (
 	"strings"
 )
 
+// version is set by the release build (-ldflags "-X main.version=v0.1.0").
+var version = "dev"
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -25,6 +28,7 @@ const usage = `vedutaos makes VedutaOS cards.
 
   vedutaos card <dir> [flags]            write the console and games onto a card
   vedutaos qemu [flags] [-- qemu-args]   make a card and boot the console in QEMU
+  vedutaos version                       print this program's version
 
 Run "vedutaos card -h" or "vedutaos qemu -h" for the flags.
 `
@@ -39,6 +43,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cardCommand(args[1:], stdout, stderr)
 	case "qemu":
 		return qemuCommand(args[1:], stdout, stderr)
+	case "version", "-version", "--version":
+		fmt.Fprintln(stdout, "vedutaos", version)
+		return 0
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
