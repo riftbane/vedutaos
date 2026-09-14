@@ -1,128 +1,81 @@
-# VedutaOS on QEMU in ten minutes
+# VedutaOS on QEMU
 
-The short version of [testing without hardware](testing-without-hardware.md): boot an
-emulated ARM64 machine on a Windows PC and run the console in it. You get the dashboard,
-the card, launching a game and coming back, driven from the keyboard. You do not get the
-SPI panel, which nothing emulates.
+Boot the console on an emulated ARM64 machine, on a Windows or Linux PC. You get the
+dashboard, the card, launching a game and coming back, driven from the keyboard. You do not
+get the SPI panel, which nothing emulates (see [testing without hardware](testing-without-hardware.md)).
 
-Everything below is typed in a Windows command prompt unless it says *in the guest*.
+## 1. Install QEMU
 
-## 1. QEMU
+- **Windows:** the installer from <https://qemu.weilnetz.de/w64/>. `vedutaos` finds it in
+  `C:\Program Files\qemu` without touching `PATH`.
+- **Debian, Ubuntu:** `sudo apt install qemu-system-arm qemu-efi-aarch64 qemu-utils`.
+- **Fedora:** `sudo dnf install qemu-system-aarch64 edk2-aarch64 qemu-img`.
 
-Install the Windows build from <https://qemu.weilnetz.de/w64/>, then:
-
-```bat
-set "PATH=%PATH%;C:\Program Files\qemu"
-qemu-system-aarch64.exe --version
-```
-
-## 2. A Linux for it
+## 2. Boot the console
 
 ```bat
-mkdir C:\vm && cd /d C:\vm
-curl.exe -L -o debian-arm64.qcow2 https://cloud.debian.org/images/cloud/trixie/latest/debian-13-nocloud-arm64.qcow2
-qemu-img.exe resize debian-arm64.qcow2 16G
+vedutaos qemu --game C:\src\veduta\template
 ```
 
-First boot, to set a password and get ssh. It logs in as `root` with no password:
+`--game` takes a game folder, a release archive (`gems_v1.2.0_linux_arm64.tar.gz`) or a
+Veduta project, which is built for the console first (this needs Go). Repeat it for more
+games. Run from the `vedutaos` source folder, `go run ./cmd/vedutaos qemu …` works the
+same way and builds the dashboard as well.
 
-```bat
-qemu-system-aarch64.exe -machine virt -cpu cortex-a72 -smp 4 -m 4G ^
-  -accel tcg,thread=multi -bios edk2-aarch64-code.fd ^
-  -drive if=virtio,format=qcow2,file=debian-arm64.qcow2 ^
-  -netdev user,id=n0,hostfwd=tcp::2222-:22 -device virtio-net-pci,netdev=n0 ^
-  -display none -serial mon:stdio
-```
+The first time, `vedutaos`:
 
-It stops at **"Press any key to proceed"** and waits there for ever if you do not press
-one. Then, *in the guest*:
+1. downloads Debian 13's generic arm64 image once (about 410 MB) and checks it against Debian's
+   published SHA-512;
+2. makes the card, a folder in your cache directory, holding the dashboard, the games and
+   cloud-init's first-boot files;
+3. creates the machine's disk as an overlay on the image, so the image stays untouched;
+4. starts QEMU with a 1280×960 screen, a USB keyboard, and the card folder shown to the
+   machine as a FAT disk labelled `CIDATA`.
 
-```sh
-passwd
-apt update && apt install -y openssh-server
-systemctl enable --now ssh
-poweroff
-```
+On its first start the machine reads that disk, installs the console and starts the
+dashboard. That takes about three minutes under emulation and needs nothing from you. Later
+starts skip the setup and reach the dashboard in about two minutes. Both times were measured
+on a four-core x86-64 server.
 
-## 3. Build the console and a game
+## Using it
 
-No Go inside the guest — cross-compile on the PC. Both repositories side by side:
+- In the QEMU window: arrows or W/S move, Enter or Space start a game, **Ctrl+Q** leaves
+  a game.
+- In the terminal: the machine's serial console. Log in as `veduta`, password `veduta`, or
+  press **Ctrl-A x** to stop the machine. `ssh -p 2222 veduta@127.0.0.1` works too. The
+  port is only open on this PC.
+- A screenshot without touching the window: **Ctrl-A c** opens QEMU's monitor, then
+  `screendump shot.png -f png`, then **Ctrl-A c** to go back.
 
-```bat
-mkdir C:\card\games\demo
-cd /d C:\src\vedutaos
-set CGO_ENABLED=0&& set GOOS=linux&& set GOARCH=arm64
-go build -o C:\card\vshell .\cmd\vshell
+## Changing something
 
-cd /d C:\src\veduta
-go build -o C:\card\games\demo\game-arm64 .\template\cmd\game
-xcopy /e /i template\assets C:\card\games\demo\assets
-copy template\veduta.json C:\card\games\demo\
-(echo {"veduta":"card/1","title":"DEMO","exec":"game-arm64"}) > C:\card\games\demo\card.json
+Run `vedutaos qemu` again with the same flags. It rebuilds what it builds, copies the new
+dashboard and games onto the card, and boots the machine with them. Games already on the
+card stay there. The card folder is read when QEMU starts, so a change made while the
+machine runs shows at the next start.
 
-set GOOS=&& set GOARCH=
-```
-
-## 4. Boot with a screen and a keyboard
-
-```bat
-cd /d C:\vm
-qemu-system-aarch64.exe -machine virt -cpu cortex-a72 -smp 4 -m 4G ^
-  -accel tcg,thread=multi -bios edk2-aarch64-code.fd ^
-  -drive if=virtio,format=qcow2,file=debian-arm64.qcow2 ^
-  -device virtio-gpu-pci -device qemu-xhci -device usb-kbd ^
-  -netdev user,id=n0,hostfwd=tcp::2222-:22 -device virtio-net-pci,netdev=n0 ^
-  -display sdl -serial mon:stdio
-```
-
-Do not add `-device ramfb` as well: with two 32-bit framebuffers the console refuses to
-guess which is the screen, and says so.
-
-Copy the card in (9p and virtiofs cannot be built on a Windows host, so use ssh):
-
-```bat
-scp -P 2222 -r C:\card root@127.0.0.1:/root/
-```
-
-## 5. Run it
-
-*In the guest*, take the framebuffer away from the text console first, or it redraws over
-the dashboard:
-
-```sh
-chvt 2
-echo 0 > /sys/class/vtconsole/vtcon1/bind
-VEDUTA_BACKEND=fbdev VEDUTA_SCALE=4 VEDUTAOS_GAMES=/root/card/games /root/card/vshell
-```
-
-- Arrows or W/S move, Space or Enter start a game, Escape leaves the dashboard.
-- **Ctrl+Q closes the window** — the way out of a running game when there is no pad to
-  press Select+Start on.
-- `VEDUTA_SCALE=4` draws a quarter of the pixels in each direction, close to the real
-  320×240 panel. Under emulation it is the difference between usable and not.
-
-A screenshot without touching the window: `Ctrl-A c` for the QEMU monitor, then
-`screendump C:\vm\shot.png -f png`, `Ctrl-A c` to go back, `Ctrl-A x` to quit.
+- `--fresh` throws the machine's disk away and installs the console again from Debian's
+  image.
+- `--card DIR` keeps the card in a folder of your choosing.
+- `--display sdl` or `--display gtk` picks QEMU's window; `--display none` has no window.
+- `--print` makes the card and prints the QEMU command without running it.
+- Anything after `--` is passed to QEMU:
+  `vedutaos qemu -- -monitor tcp:127.0.0.1:4444,server,nowait`.
 
 ## When something is wrong
 
-```sh
-# What the console sees as a screen: expect virtio_gpudrmfb, 1280,800, 32, 5120.
-head /sys/class/graphics/fb*/name /sys/class/graphics/fb*/virtual_size \
-     /sys/class/graphics/fb*/bits_per_pixel /sys/class/graphics/fb*/stride
+Log in on the serial console or over ssh, then:
 
-# What it sees as input: expect "QEMU QEMU USB Keyboard".
+```sh
+sudo journalctl -u vedutaos        # what the dashboard said
+cloud-init status --long           # whether the first-boot setup ran, and what failed
+cat /sys/class/graphics/fb0/name   # expect virtio_gpudrmfb
 for d in /sys/class/input/event*/device; do echo "$d $(cat $d/name)"; done
 ```
 
-- *No framebuffer, or several* — name one: `VEDUTA_FB=fb0`.
-- *Nothing responds* — the keyboard was not found; name it: `VEDUTA_PAD=event1`.
-- *The dashboard is there but no games* — `VEDUTAOS_GAMES` points at the folder that
-  *contains* the game folders, not at a game.
-
-## Rebuilding
-
-```bat
-cd /d C:\src\vedutaos && set GOOS=linux&& set GOARCH=arm64&& go build -o C:\card\vshell .\cmd\vshell && set GOOS=&& set GOARCH=
-scp -P 2222 C:\card\vshell root@127.0.0.1:/root/card/vshell
-```
+- *The dashboard is there but no games:* the card holds no folder with a program in it.
+  `vedutaos` lists the games as the dashboard will each time it runs.
+- *No dashboard, a login prompt instead:* the first-boot setup did not run. Check
+  `cloud-init status --long`, then try `--fresh`.
+- *QEMU says the card is too big:* QEMU presents the card as FAT16, which holds about 500 MB.
+  Keep fewer games on the card you use in the emulator.

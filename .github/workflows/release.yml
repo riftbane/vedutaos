@@ -1,0 +1,62 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CGO_ENABLED: "0"
+  GOAMD64: v1
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: test
+        run: go test ./...
+
+      - name: build archives
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME}"
+          mkdir -p build dist
+          # The dashboard runs on the console, which is linux/arm64 on every board; each
+          # archive carries it beside the tool, which puts it on the card. Nobody making a
+          # card needs Go.
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o build/vshell-arm64 ./cmd/vshell
+          for target in windows/amd64 linux/amd64 linux/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            stage="build/${os}_${arch}"
+            mkdir -p "$stage"
+            exe=vedutaos
+            if [ "$os" = windows ]; then exe=vedutaos.exe; fi
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "$stage/$exe" ./cmd/vedutaos
+            cp build/vshell-arm64 README.md "$stage/"
+            mkdir -p "$stage/docs" && cp docs/*.md "$stage/docs/"
+            name="vedutaos_${tag}_${os}_${arch}"
+            if [ "$os" = windows ]; then
+              (cd "$stage" && zip -q -X -r "../../dist/${name}.zip" "$exe" vshell-arm64 README.md docs)
+            else
+              tar -C "$stage" -czf "dist/${name}.tar.gz" "$exe" vshell-arm64 README.md docs
+            fi
+          done
+          (cd dist && sha256sum * > checksums.txt)
+          cat dist/checksums.txt
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""
+          case "${GITHUB_REF_NAME}" in *-*) pre="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" $pre --generate-notes dist/*

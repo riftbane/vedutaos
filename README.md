@@ -5,9 +5,26 @@ Pi behind a 320×240 panel, a gamepad, and a dashboard listing the games present
 card. Games arrive by dragging a folder onto the card from a PC — there is no store, no
 installer and no network.
 
-**Nothing boots yet.** This repository is being built from the bottom up, and each piece is
-written so it can be proved on a machine with no panel and no pad before it ever reaches
-the hardware. What is here today is the part that reads the card.
+**Not yet run on a Raspberry Pi.** The console installs itself from a card and runs end to
+end on an emulated ARM64 machine; the panel, the pad and the boards themselves are still to
+be proved on hardware. Each piece is written so it can be proved on a machine with no panel
+and no pad before it ever reaches one.
+
+## Making a console
+
+`vedutaos` makes the card from a Windows or Linux PC, and the machine installs the console
+by itself the first time it starts:
+
+```sh
+# a Raspberry Pi: E:\ is the boot partition of a card fresh from Raspberry Pi Imager
+vedutaos card E:\ --game gems_v1.2.0_linux_arm64.tar.gz
+
+# an emulated machine: downloads Debian's arm64 image once, then boots it
+vedutaos qemu --game gems_v1.2.0_linux_arm64.tar.gz
+```
+
+The steps, the panel's wiring and what to check when something is wrong are in
+[VedutaOS on a Raspberry Pi](docs/quickstart-pi.md) and [VedutaOS on QEMU](docs/quickstart-qemu.md).
 
 ## The hardware it is for
 
@@ -53,10 +70,9 @@ Everything here is standard-library Go, built without cgo, and the tests need no
 go test ./...
 ```
 
-The console can also be run end to end before any board arrives — on an emulated ARM64
-machine, or on a spare Linux laptop at a text console. To try it now, follow
-[VedutaOS on QEMU in ten minutes](docs/quickstart-qemu.md); for what that proves and what
-it cannot (the SPI panel, and the Pi 5 itself, are not emulated by anything), see
+From this folder, `go run ./cmd/vedutaos card …` and `go run ./cmd/vedutaos qemu …` build
+the dashboard for the console as they go. For what the emulator proves and what it cannot
+(the SPI panel, and the Pi 5 itself, are not emulated by anything), see
 [testing without hardware](docs/testing-without-hardware.md).
 
 ## Licence

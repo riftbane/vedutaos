@@ -48,3 +48,10 @@ jobs:
           # The boards are both 64-bit ARM, so one build serves the Pi 5 and the Zero 2 W.
           GOOS=linux GOARCH=arm64 go build ./...
           GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/vshell
+
+      - name: build the card tool for the PCs that make cards
+        run: |
+          # vedutaos runs on the PC, most often a Windows one.
+          GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/vedutaos
+          GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/vedutaos
+          GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/vedutaos
