@@ -97,7 +97,9 @@ func Draw(b *sprite.Batch, r Resources, w, h int, s State) {
 	top := pad + cell + pad
 	rowH := cell + 2*scale
 	iconSide := rowH - 2*scale
-	rows := (h - top - pad - cell) / rowH
+	// Leave the footer a clear gap: on a small panel a list that touches it reads as one
+	// block of text.
+	rows := (h - top - 2*pad - cell) / rowH
 	if rows < 1 {
 		rows = 1
 	}
