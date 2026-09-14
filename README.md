@@ -13,14 +13,17 @@ and no pad before it ever reaches one.
 ## Making a console
 
 `vedutaos` makes the card from a Windows or Linux PC, and the machine installs the console
-by itself the first time it starts:
+by itself the first time it starts. Download it from the
+[latest release](https://github.com/riftbane/vedutaos/releases/latest). The archive also
+carries the dashboard and the engine's demo game, built for the console. In the unpacked
+folder:
 
-```sh
-# a Raspberry Pi: E:\ is the boot partition of a card fresh from Raspberry Pi Imager
-vedutaos card E:\ --game gems_v1.2.0_linux_arm64.tar.gz
+```bat
+:: an emulated machine: downloads Debian's arm64 image once, then boots it
+vedutaos qemu --game games\demo
 
-# an emulated machine: downloads Debian's arm64 image once, then boots it
-vedutaos qemu --game gems_v1.2.0_linux_arm64.tar.gz
+:: a Raspberry Pi: E:\ is the boot partition of a card fresh from Raspberry Pi Imager
+vedutaos card E:\ --game games\demo
 ```
 
 The steps, the panel's wiring and what to check when something is wrong are in

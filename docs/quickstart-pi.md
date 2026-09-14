@@ -16,10 +16,11 @@ first-boot settings from the card with cloud-init. Imager always offers the curr
 ## 2. Put the console on the card
 
 Take the card out and put it back in. The PC shows its boot partition as a drive
-(`bootfs`, say `E:`). Then run:
+(`bootfs`, say `E:`). Get `vedutaos` as described in
+[VedutaOS on QEMU](quickstart-qemu.md#2-get-vedutaos). Then, in its folder, run:
 
 ```bat
-vedutaos card E:\ --game C:\Downloads\gems_v1.2.0_linux_arm64.tar.gz
+vedutaos card E:\ --game games\demo
 ```
 
 `--game` takes a game folder, a release archive or a Veduta project, and can be repeated.

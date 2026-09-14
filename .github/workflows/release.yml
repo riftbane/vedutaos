@@ -21,6 +21,22 @@ jobs:
         with:
           go-version: stable
 
+      - name: release notes
+        run: |
+          set -eu
+          tag="${GITHUB_REF_NAME}"
+          mkdir -p build
+          # The notes are the tag's section of CHANGELOG.md; a tag without one stops here,
+          # before anything is built.
+          awk -v head="## ${tag}" '
+            index($0, head) == 1 && (length($0) == length(head) || substr($0, length(head) + 1, 1) == " ") { on = 1; next }
+            on && /^## / { exit }
+            on { print }' CHANGELOG.md > build/notes.md
+          if ! grep -q '[^[:space:]]' build/notes.md; then
+            echo "CHANGELOG.md has no section for ${tag}" >&2
+            exit 1
+          fi
+
       - name: test
         run: go test ./...
 
@@ -33,21 +49,31 @@ jobs:
           # archive carries it beside the tool, which puts it on the card. Nobody making a
           # card needs Go.
           GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o build/vshell-arm64 ./cmd/vshell
+
+          # The engine's demo game, from the engine release this repository builds against,
+          # built for the console by the tool itself, so a card can be tried with nothing but
+          # the archive.
+          engine="$(go list -m -f '{{.Version}}' github.com/riftbane/veduta)"
+          git clone --quiet --depth 1 --branch "$engine" https://github.com/riftbane/veduta build/engine
+          go run ./cmd/vedutaos card --target qemu build/democard --vshell build/vshell-arm64 --game build/engine/template
+          test -f build/democard/games/demo/card.json
+
           for target in windows/amd64 linux/amd64 linux/arm64; do
             os="${target%/*}"
             arch="${target#*/}"
             stage="build/${os}_${arch}"
-            mkdir -p "$stage"
+            mkdir -p "$stage/docs" "$stage/games"
             exe=vedutaos
             if [ "$os" = windows ]; then exe=vedutaos.exe; fi
-            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "$stage/$exe" ./cmd/vedutaos
-            cp build/vshell-arm64 README.md "$stage/"
-            mkdir -p "$stage/docs" && cp docs/*.md "$stage/docs/"
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=${tag}" -o "$stage/$exe" ./cmd/vedutaos
+            cp build/vshell-arm64 README.md CHANGELOG.md "$stage/"
+            cp docs/*.md "$stage/docs/"
+            cp -r build/democard/games/demo "$stage/games/demo"
             name="vedutaos_${tag}_${os}_${arch}"
             if [ "$os" = windows ]; then
-              (cd "$stage" && zip -q -X -r "../../dist/${name}.zip" "$exe" vshell-arm64 README.md docs)
+              (cd "$stage" && zip -q -X -r "../../dist/${name}.zip" "$exe" vshell-arm64 README.md CHANGELOG.md docs games)
             else
-              tar -C "$stage" -czf "dist/${name}.tar.gz" "$exe" vshell-arm64 README.md docs
+              tar -C "$stage" -czf "dist/${name}.tar.gz" "$exe" vshell-arm64 README.md CHANGELOG.md docs games
             fi
           done
           (cd dist && sha256sum * > checksums.txt)
@@ -59,4 +85,4 @@ jobs:
         run: |
           pre=""
           case "${GITHUB_REF_NAME}" in *-*) pre="--prerelease" ;; esac
-          gh release create "${GITHUB_REF_NAME}" $pre --generate-notes dist/*
+          gh release create "${GITHUB_REF_NAME}" $pre --title "vedutaos ${GITHUB_REF_NAME}" --notes-file build/notes.md dist/*

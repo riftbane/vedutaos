@@ -11,16 +11,39 @@ get the SPI panel, which nothing emulates (see [testing without hardware](testin
 - **Debian, Ubuntu:** `sudo apt install qemu-system-arm qemu-efi-aarch64 qemu-utils`.
 - **Fedora:** `sudo dnf install qemu-system-aarch64 edk2-aarch64 qemu-img`.
 
-## 2. Boot the console
+## 2. Get vedutaos
+
+Download the archive for your PC from the
+[latest release](https://github.com/riftbane/vedutaos/releases/latest):
+`vedutaos_<version>_windows_amd64.zip` on Windows, or `…_linux_amd64.tar.gz` on Linux.
+It holds:
+
+- `vedutaos`, the program that makes cards;
+- `vshell-arm64`, the dashboard for the console, which must stay beside `vedutaos`;
+- `games\demo`, the engine's demo game, already built for the console;
+- these guides.
+
+On Windows, unpack it into a folder of your choosing, for example `C:\vedutaos`. If Windows
+refuses to run a program from it, right-click the zip, choose **Properties**, tick
+**Unblock**, and unpack it again. Then open a Command Prompt in that folder:
 
 ```bat
-vedutaos qemu --game C:\src\veduta\template
+cd /d C:\vedutaos
+vedutaos version
 ```
 
-`--game` takes a game folder, a release archive (`gems_v1.2.0_linux_arm64.tar.gz`) or a
-Veduta project, which is built for the console first (this needs Go). Repeat it for more
-games. Run from the `vedutaos` source folder, `go run ./cmd/vedutaos qemu …` works the
-same way and builds the dashboard as well.
+In PowerShell a program in the current folder is started as `.\vedutaos`.
+
+## 3. Boot the console with the demo
+
+```bat
+vedutaos qemu --game games\demo
+```
+
+`--game` also takes another game folder or a release archive
+(`gems_v1.2.0_linux_arm64.tar.gz`), and can be repeated. It takes a Veduta project too,
+which is then built for the console, but only if Go is installed. From the `vedutaos` source
+folder, `go run ./cmd/vedutaos qemu …` works the same way and builds the dashboard as well.
 
 The first time, `vedutaos`:
 
