@@ -226,4 +226,11 @@ func TestUsage(t *testing.T) {
 	if code, _, errs := runTool(t, "card", t.TempDir(), "--scale", "9", "--vshell", "x"); code != 2 || !strings.Contains(errs, "scale") {
 		t.Errorf("scale 9: %d %s", code, errs)
 	}
+	boot := bootPartition(t)
+	if code, _, errs := runTool(t, "card", boot, "--rotate", "180", "--vshell", "x"); code != 2 || !strings.Contains(errs, "rotate") {
+		t.Errorf("rotate 180: %d %s", code, errs)
+	}
+	if exists(boot, "vedutaos") {
+		t.Error("a refused card was written to")
+	}
 }

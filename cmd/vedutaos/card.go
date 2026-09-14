@@ -84,7 +84,13 @@ func (s *cardSettings) options(target provision.Target) (provision.Options, pane
 			}
 		}
 	}
-	return o, panel.Options{Rotate: s.rotate, RGB: s.rgb, Invert: s.invert}, o.Validate()
+	p := panel.Options{Rotate: s.rotate, RGB: s.rgb, Invert: s.invert}
+	if o.Panel {
+		if _, err := panel.ILI9341(p); err != nil {
+			return o, p, err
+		}
+	}
+	return o, p, o.Validate()
 }
 
 func parsePins(s string, pins provision.Pins) (provision.Pins, error) {
@@ -144,7 +150,8 @@ func cardCommand(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if o.Target == provision.Pi {
-		fmt.Fprintln(stdout, "\nPut the card in the Raspberry Pi and switch it on. The first start installs the console\nand restarts once; then the dashboard appears. Later, games are folders dropped into games\\.")
+		fmt.Fprintf(stdout, "\nPut the card in the Raspberry Pi and switch it on. The first start installs the console\nand restarts once; then the dashboard appears. Later, games are folders dropped into %s.\n",
+			filepath.Join(rest[0], provision.Games))
 	}
 	return 0
 }
