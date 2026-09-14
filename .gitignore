@@ -1,0 +1,16 @@
+# Build and tool output
+/out/
+/bin/
+/dist/
+*.test
+*.prof
+
+# Card images and staged game folders
+/image/
+/games/
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
