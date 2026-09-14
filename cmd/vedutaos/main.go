@@ -37,6 +37,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "card":
 		return cardCommand(args[1:], stdout, stderr)
+	case "qemu":
+		return qemuCommand(args[1:], stdout, stderr)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
