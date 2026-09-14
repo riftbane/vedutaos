@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [stable, oldstable]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then echo "gofmt needed on:"; echo "$out"; exit 1; fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: no third-party modules
+        run: |
+          # Only the engine may appear: the console is standard library plus Veduta.
+          if grep -v '^github.com/riftbane/veduta ' go.sum | grep -q .; then
+            echo "go.sum names something other than the engine:"; cat go.sum; exit 1
+          fi
+
+      - name: build for the console
+        run: |
+          # The boards are both 64-bit ARM, so one build serves the Pi 5 and the Zero 2 W.
+          GOOS=linux GOARCH=arm64 go build ./...
+          GOOS=linux GOARCH=arm64 go build -o /dev/null ./cmd/vshell
