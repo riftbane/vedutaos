@@ -1,0 +1,33 @@
+#cloud-config
+# Written by vedutaos card, which replaces this file each time it runs.
+{
+  "hostname": "vedutaos",
+  "users": [
+    {
+      "name": "veduta",
+      "gecos": "VedutaOS",
+      "groups": "sudo,video,input",
+      "shell": "/bin/bash",
+      "sudo": "ALL=(ALL) NOPASSWD:ALL",
+      "lock_passwd": false,
+      "plain_text_passwd": "veduta"
+    }
+  ],
+  "ssh_pwauth": true,
+  "write_files": [
+    {
+      "path": "/etc/systemd/system/vedutaos.service",
+      "content": "[Unit]\nDescription=VedutaOS dashboard\nDocumentation=https://github.com/riftbane/vedutaos\nAfter=systemd-user-sessions.service\nRequiresMountsFor=/boot/firmware\nConflicts=getty@tty1.service\n\n[Service]\nEnvironmentFile=-/boot/firmware/vedutaos/env\n# The text console would draw over the frames: take the framebuffer from it while the\n# dashboard runs, and give it back when it stops.\nExecStartPre=-/bin/sh -c 'for c in /sys/class/vtconsole/vtcon*; do grep -q \"frame buffer\" \"$$c/name\" && echo 0 > \"$$c/bind\"; done'\nExecStart=/boot/firmware/vedutaos/vshell\nExecStopPost=-/bin/sh -c 'for c in /sys/class/vtconsole/vtcon*; do grep -q \"frame buffer\" \"$$c/name\" && echo 1 > \"$$c/bind\"; done'\nStandardInput=tty\nStandardOutput=journal\nStandardError=journal\nTTYPath=/dev/tty1\nTTYReset=yes\nTTYVHangup=yes\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n",
+      "permissions": "0644"
+    }
+  ],
+  "runcmd": [
+    "mkdir -p /boot/firmware",
+    "grep -q ' /boot/firmware ' /etc/fstab || echo 'LABEL=CIDATA /boot/firmware vfat ro,nofail 0 0' >> /etc/fstab",
+    "mountpoint -q /boot/firmware || mount /boot/firmware",
+    "systemctl mask getty@tty1.service",
+    "systemctl daemon-reload",
+    "systemctl enable vedutaos.service",
+    "systemctl start --no-block vedutaos.service"
+  ]
+}
