@@ -57,6 +57,9 @@ func qemuArgs(c qemuConfig) []string {
 		"-device", fmt.Sprintf("virtio-gpu-pci,xres=%d,yres=%d", screenW, screenH),
 		"-device", "qemu-xhci",
 		"-device", "usb-kbd",
+		// A tablet reports where the pointer is, which the player reads as the stick: the
+		// middle of the window is rest. It follows the host pointer without grabbing it.
+		"-device", "usb-tablet",
 		"-netdev", fmt.Sprintf("user,id=net0,hostfwd=tcp:127.0.0.1:%d-:22", c.SSHPort),
 		// No option ROM: the firmware never boots from the network, and not every QEMU
 		// installation ships the ROM file.
@@ -186,7 +189,7 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 	if *printCmd {
 		return 0
 	}
-	fmt.Fprintf(stdout, "\nIn the window: arrows move, Enter starts a game, Ctrl+Q leaves it. Here: log in as %s\n(password %s), or Ctrl-A x to stop the machine. ssh -p %d %s@127.0.0.1 works too.\n\n",
+	fmt.Fprintf(stdout, "\nIn the window: arrows move, Enter starts a game, the mouse is the stick, Ctrl+Q leaves it. Here: log in as %s\n(password %s), or Ctrl-A x to stop the machine. ssh -p %d %s@127.0.0.1 works too.\n\n",
 		provision.User, provision.QEMUPassword, *sshPort, provision.User)
 	cmd := exec.Command(qemu, argv...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, stderr

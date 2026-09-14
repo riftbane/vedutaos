@@ -52,7 +52,7 @@ The first time, `vedutaos`:
 2. makes the card, a folder in your cache directory, holding the dashboard, the games and
    cloud-init's first-boot files;
 3. creates the machine's disk as an overlay on the image, so the image stays untouched;
-4. starts QEMU with a 1280×960 screen, a USB keyboard, and the card folder shown to the
+4. starts QEMU with a 1280×960 screen, a USB keyboard and tablet, and the card folder shown to the
    machine as a FAT disk labelled `CIDATA`.
 
 On its first start the machine reads that disk, installs the console and starts the
@@ -64,6 +64,11 @@ on a four-core x86-64 server.
 
 - In the QEMU window: arrows or W/S move, Enter or Space start a game, **Ctrl+Q** leaves
   a game.
+- In a game, the keyboard and the mouse stand in for the console's controls: W A S D or
+  the arrows are the D-pad; the mouse pointer is the analog stick (the middle of the window
+  is rest, its edges are the ends); Space, Escape, F and R are A, B, X and Y; Tab and Enter
+  are Select and Start; Ctrl+Q is Home. A game needs engine v1.1.0 or later for the stick,
+  WASD and Home; one built with v1.0.0 has the arrows and buttons only.
 - In the terminal: the machine's serial console. Log in as `veduta`, password `veduta`, or
   press **Ctrl-A x** to stop the machine. `ssh -p 2222 veduta@127.0.0.1` works too. The
   port is only open on this PC.

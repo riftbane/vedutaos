@@ -24,6 +24,8 @@ virtio-gpu-pci,xres=1280,yres=960
 qemu-xhci
 -device
 usb-kbd
+-device
+usb-tablet
 -netdev
 user,id=net0,hostfwd=tcp:127.0.0.1:2223-:22
 -device

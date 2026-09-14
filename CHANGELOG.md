@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- `vedutaos qemu` gives the machine a USB tablet beside the keyboard. A game built with
+  engine v1.1.0 or later reads the pointer as the console's analog stick (the middle of the
+  window is rest), so the stick can be tried in emulation; the tablet follows the host
+  pointer without grabbing it. `docs/quickstart-qemu.md` lists the keyboard and mouse
+  stand-ins for the console's controls.
+
 ## v0.1.0 — 2026-09-14
 
 The first release: a console card made from a PC, for QEMU or a Raspberry Pi, with nothing
