@@ -54,9 +54,10 @@ go test ./...
 ```
 
 The console can also be run end to end before any board arrives — on an emulated ARM64
-machine, or on a spare Linux laptop at a text console. What that proves, what it cannot
-(the SPI panel, and the Pi 5 itself, are not emulated by anything), and the exact commands
-for a Windows PC are in [testing without hardware](docs/testing-without-hardware.md).
+machine, or on a spare Linux laptop at a text console. To try it now, follow
+[VedutaOS on QEMU in ten minutes](docs/quickstart-qemu.md); for what that proves and what
+it cannot (the SPI panel, and the Pi 5 itself, are not emulated by anything), see
+[testing without hardware](docs/testing-without-hardware.md).
 
 ## Licence
 
