@@ -56,6 +56,12 @@ type source struct {
 // is not a game and is passed over; anything else is returned, with Problem saying what
 // was wrong when its description could not be used.
 func Scan(dir string) ([]Card, error) {
+	return ScanFor(dir, runtime.GOARCH)
+}
+
+// ScanFor is Scan as a machine of another architecture sees the card: a PC preparing a
+// card uses it to list what the console will list.
+func ScanFor(dir, goarch string) ([]Card, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("card: %w", err)
@@ -65,7 +71,7 @@ func Scan(dir string) ([]Card, error) {
 		if !e.IsDir() {
 			continue
 		}
-		if c, ok := load(filepath.Join(dir, e.Name()), e.Name()); ok {
+		if c, ok := load(filepath.Join(dir, e.Name()), e.Name(), goarch); ok {
 			out = append(out, c)
 		}
 	}
@@ -79,7 +85,7 @@ func Scan(dir string) ([]Card, error) {
 }
 
 // load describes one folder. It reports false when the folder holds nothing that can run.
-func load(dir, base string) (Card, bool) {
+func load(dir, base, goarch string) (Card, bool) {
 	c := Card{Dir: dir, Title: base}
 	src, err := read(filepath.Join(dir, File))
 	switch {
@@ -91,7 +97,7 @@ func load(dir, base string) (Card, bool) {
 		}
 		c.Name, c.Version = src.Name, src.Version
 	}
-	if exec, ok := findExec(dir, src.Exec); ok {
+	if exec, ok := findExec(dir, src.Exec, goarch); ok {
 		c.Exec = exec
 	} else {
 		return Card{}, false // nothing to launch: this is not a game
@@ -125,10 +131,10 @@ func read(path string) (source, error) {
 }
 
 // findExec picks the program to run: the one the description names, else the build for
-// this machine, else a plain "game". One card therefore serves boards of different
-// architectures.
-func findExec(dir, named string) (string, bool) {
-	names := []string{"game-" + runtime.GOARCH, "game"}
+// the machine's architecture, else a plain "game". One card therefore serves boards of
+// different architectures.
+func findExec(dir, named, goarch string) (string, bool) {
+	names := []string{"game-" + goarch, "game"}
 	if named != "" && safeName(named) {
 		names = append([]string{named}, names...)
 	}

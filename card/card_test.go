@@ -132,6 +132,15 @@ func TestScanPrefersThisArchitecture(t *testing.T) {
 	}
 }
 
+// A PC lists a card as the console will: by the console's architecture, not its own.
+func TestScanForAnotherArchitecture(t *testing.T) {
+	root := games(t, "arm||game-arm64", "pc||game-amd64")
+	cards, err := ScanFor(root, "arm64")
+	if err != nil || len(cards) != 1 || cards[0].Title != "arm" {
+		t.Fatalf("scan for arm64: %+v %v", cards, err)
+	}
+}
+
 // TestScanRefusesToLeaveTheFolder: a card comes from a card, which comes from anywhere.
 func TestScanRefusesToLeaveTheFolder(t *testing.T) {
 	root := games(t, `escape|{"veduta":"card/1","title":"Escape","exec":"../../bin/sh","icon":"/etc/passwd"}|game`)
