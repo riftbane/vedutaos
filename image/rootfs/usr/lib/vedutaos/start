@@ -1,0 +1,7 @@
+#!/bin/sh
+# A vshell on the card replaces the one in the image: that is how a console is updated
+# from a PC without writing the image again.
+if [ -x /boot/firmware/vedutaos/vshell ]; then
+	exec /boot/firmware/vedutaos/vshell
+fi
+exec /usr/lib/vedutaos/vshell

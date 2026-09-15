@@ -1,5 +1,0 @@
-# VedutaOS settings, read each time the dashboard starts.
-# Written by vedutaos card, which replaces this file each time it runs.
-VEDUTA_BACKEND=fbdev
-VEDUTA_SCALE=1
-VEDUTAOS_GAMES=/boot/firmware/games
