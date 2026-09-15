@@ -1,0 +1,93 @@
+name: image
+
+# Builds vedutaos.img, boots it on QEMU and drives the console through the dashboard, a
+# game and back. On a tag the image joins the release. Slow (the boot is emulated), so it
+# runs on tags, by hand, and when what goes into the image changes.
+on:
+  push:
+    tags: ["v*"]
+    branches: [main]
+    paths: ["image/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml"]
+  pull_request:
+    paths: ["image/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: tools for building and booting the image
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends qemu-user-static binfmt-support qemu-system-arm qemu-utils xz-utils openssh-client
+          test -e /proc/sys/fs/binfmt_misc/qemu-aarch64
+
+      - name: base image
+        id: base
+        run: echo "sha=$(grep -o 'SHA256: *"[0-9a-f]*"' image/build.go | grep -o '[0-9a-f]\{64\}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: cache
+          key: raspios-${{ steps.base.outputs.sha }}
+
+      - name: build the image
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME}"
+          case "${GITHUB_REF}" in refs/tags/*) ;; *) version="dev-${GITHUB_SHA::7}" ;; esac
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o out/vshell-arm64 ./cmd/vshell
+          go build -o out/vedutaos ./cmd/vedutaos
+          sudo ./out/vedutaos image --out out --cache cache --vshell out/vshell-arm64 --version "$version"
+          sudo chown -R "$(id -u):$(id -g)" out
+          ls -la out
+
+      - name: boot it and play
+        run: VEDUTAOS_E2E=1 go test ./test/e2e -timeout 60m -v
+
+      - name: screens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens
+          path: test/e2e/testdata/*.got.png
+          if-no-files-found: ignore
+
+      - name: pack
+        run: |
+          set -eu
+          mkdir -p dist
+          xz -T0 -c out/vedutaos.img > dist/vedutaos.img.xz
+          cp out/vmlinuz out/initrd.img dist/
+          (cd dist && sha256sum * > image-checksums.txt && cat image-checksums.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vedutaos-image
+          path: dist/*
+          retention-days: 14
+
+      - name: attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The release workflow creates the release; wait for it rather than race it.
+          for i in $(seq 1 60); do
+            gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 && break
+            sleep 15
+          done
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber

@@ -35,6 +35,9 @@ func TestOverlay(t *testing.T) {
 	if !strings.Contains(def, "VEDUTAOS_GAMES=/boot/firmware/games") {
 		t.Error("defaults must name the games folder on the card")
 	}
+	if conf := must("/etc/systemd/system.conf.d/vedutaos.conf"); !strings.Contains(conf, "DefaultDeviceTimeoutSec=600s") {
+		t.Error("the emulated first boot needs a long device timeout")
+	}
 	mods := must("/etc/initramfs-tools/modules")
 	if !strings.Contains(mods, "virtio_blk") {
 		t.Error("the QEMU initramfs needs virtio_blk")

@@ -55,7 +55,7 @@ jobs:
           # the archive.
           engine="$(go list -m -f '{{.Version}}' github.com/riftbane/veduta)"
           git clone --quiet --depth 1 --branch "$engine" https://github.com/riftbane/veduta build/engine
-          go run ./cmd/vedutaos card --target qemu build/democard --vshell build/vshell-arm64 --game build/engine/template
+          go run ./cmd/vedutaos card build/democard --game build/engine/template
           test -f build/democard/games/demo/card.json
 
           for target in windows/amd64 linux/amd64 linux/arm64; do

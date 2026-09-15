@@ -235,6 +235,7 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "\nIn the window: arrows move, Enter starts a game, the mouse is the stick, Ctrl+Q leaves it.\nHere: Ctrl-A x stops the machine. With a key given by --ssh-key: ssh -p %d veduta@127.0.0.1\n\n", *sshPort)
 	cmd := exec.Command(qemu, argv...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, stderr
+	tieToParent(cmd)
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
