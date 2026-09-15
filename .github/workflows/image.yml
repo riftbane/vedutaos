@@ -37,7 +37,9 @@ jobs:
 
       - name: base image
         id: base
-        run: echo "sha=$(grep -o 'SHA256: *"[0-9a-f]*"' image/build.go | grep -o '[0-9a-f]\{64\}')" >> "$GITHUB_OUTPUT"
+        run: |
+          sha="$(grep -o 'SHA256: *"[0-9a-f]*"' image/build.go | grep -o '[0-9a-f]\{64\}')"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@v4
         with:
