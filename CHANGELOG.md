@@ -12,9 +12,8 @@
 
 ### Changed
 
-- Built against engine v1.1.0. The dashboard answers a keyboard's W and S as the D-pad and
-  closes on Home as on Select+Start; the demo a release ships is the engine's v1.1.0
-  template, which walks with the stick.
+- Built against engine v1.1.0. The dashboard closes on Home as on Select+Start; the demo a
+  release ships is the engine's v1.1.0 template, which walks with the stick.
 
 ## v0.1.0 — 2026-09-14
 
