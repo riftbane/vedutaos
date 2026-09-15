@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riftbane/vedutaos/provision"
+	"github.com/riftbane/vedutaos/image"
 )
 
 // fakeProgram writes the header of a Linux program for a machine: enough for the tool to
@@ -32,22 +32,6 @@ func fakeProgram(t *testing.T, path string, machine elf.Machine) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-// bootPartition is what a PC sees of a Raspberry Pi OS card just written by Imager.
-func bootPartition(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	for _, f := range []string{"config.txt", "cmdline.txt", "user-data", "meta-data"} {
-		b, err := os.ReadFile(filepath.Join("..", "..", "provision", "testdata", "stock", f))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, f), b, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return dir
 }
 
 func game(t *testing.T, name string, machine elf.Machine) string {
@@ -81,133 +65,92 @@ func exists(dir, name string) bool {
 	return err == nil
 }
 
-func TestPiCard(t *testing.T) {
-	boot := bootPartition(t)
-	stockConfig := read(t, boot, "config.txt")
-	vshell := fakeProgram(t, filepath.Join(t.TempDir(), "vshell"), elf.EM_AARCH64)
+func TestCard(t *testing.T) {
+	dir := t.TempDir()
 	key := filepath.Join(t.TempDir(), "id_ed25519.pub")
 	os.WriteFile(key, []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ5f me@pc\n"), 0o644)
 
-	code, out, errs := runTool(t, "card", boot, "--vshell", vshell, "--game", game(t, "gems", elf.EM_AARCH64), "--ssh-key", key)
+	// A card of games alone: the console's own settings and dashboard stay.
+	code, out, errs := runTool(t, "card", dir, "--game", game(t, "gems", elf.EM_AARCH64), "--ssh-key", key)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
-	for _, f := range []string{"vedutaos/vshell", "vedutaos/env", "vedutaos/vedutaos-ili9341.bin", "userconf.txt", "games/gems/game"} {
-		if !exists(boot, f) {
-			t.Errorf("no %s on the card", f)
-		}
+	if !exists(dir, "games/gems/game") || !exists(dir, "games/gems/card.json") {
+		t.Error("the game is not on the card")
 	}
-	if ud := read(t, boot, "user-data"); !provision.Replaceable([]byte(ud)) || !strings.Contains(ud, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ5f me@pc") {
-		t.Errorf("user-data:\n%s", ud)
+	if exists(dir, "vedutaos/env") || exists(dir, "vedutaos/vshell") {
+		t.Error("settings or a dashboard written without being asked")
 	}
-	if c := read(t, boot, "config.txt"); !strings.HasPrefix(c, stockConfig) || !strings.Contains(c, "dtoverlay=mipi-dbi-spi") {
-		t.Errorf("config.txt:\n%s", c)
+	if k := read(t, dir, "vedutaos/authorized_keys"); k != "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ5f me@pc\n" {
+		t.Errorf("authorized_keys: %q", k)
 	}
-	if !strings.Contains(read(t, boot, "cmdline.txt"), "vt.global_cursor_default=0") {
-		t.Error("cmdline.txt keeps the cursor")
-	}
-	if !strings.Contains(out, "GEMS") || !strings.Contains(out, "games/gems") || !strings.Contains(out, "ILI9341") {
+	if !strings.Contains(out, "GEMS") || !strings.Contains(out, "games/gems") {
 		t.Errorf("output:\n%s", out)
 	}
-	firstMeta := read(t, boot, "meta-data")
 
-	// The same card written again is the same card: no second setup on the next start.
-	if code, _, errs := runTool(t, "card", boot, "--vshell", vshell, "--ssh-key", key); code != 0 {
+	// Written again with settings and a dashboard: the game stays, the rest is added.
+	vshell := fakeProgram(t, filepath.Join(t.TempDir(), "vshell"), elf.EM_AARCH64)
+	if code, out, errs = runTool(t, "card", dir, "--vshell", vshell, "--scale", "2", "--pad", "/dev/input/event3"); code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
-	if read(t, boot, "meta-data") != firstMeta {
-		t.Error("an unchanged card would be set up again")
+	if !exists(dir, "games/gems/game") || !exists(dir, "vedutaos/vshell") {
+		t.Error("writing the card again lost the game, or did not add the dashboard")
 	}
-	if !exists(boot, "games/gems/game") {
-		t.Error("writing the card again lost a game")
+	if env := read(t, dir, "vedutaos/env"); !strings.Contains(env, "VEDUTA_SCALE=2\n") || !strings.Contains(env, "VEDUTA_PAD=/dev/input/event3\n") || strings.Contains(env, "VEDUTA_FB") {
+		t.Errorf("env:\n%s", env)
 	}
-
-	// Taking the panel away takes all of it away, and the Pi is set up again.
-	if code, _, errs := runTool(t, "card", "--panel", "none", boot, "--vshell", vshell); code != 0 {
-		t.Fatalf("exit %d: %s", code, errs)
-	}
-	if exists(boot, "vedutaos/vedutaos-ili9341.bin") || read(t, boot, "config.txt") != stockConfig {
-		t.Error("the panel's firmware or overlay is still on the card")
-	}
-	if read(t, boot, "meta-data") == firstMeta {
-		t.Error("a changed card would not be set up again")
+	if !strings.Contains(out, "replacing the image's") {
+		t.Errorf("output does not mention the dashboard:\n%s", out)
 	}
 }
 
-func TestPiCardRefusesWhatItShouldNotTouch(t *testing.T) {
-	vshell := fakeProgram(t, filepath.Join(t.TempDir(), "vshell"), elf.EM_AARCH64)
-	if code, _, errs := runTool(t, "card", t.TempDir(), "--vshell", vshell); code != 1 || !strings.Contains(errs, "not the boot partition") {
-		t.Errorf("a folder that is not a boot partition: exit %d, %s", code, errs)
-	}
-
-	boot := bootPartition(t)
-	imager := "#cloud-config\nhostname: mypi\nusers:\n- name: me\n"
-	os.WriteFile(filepath.Join(boot, "user-data"), []byte(imager), 0o644)
-	if code, _, errs := runTool(t, "card", boot, "--vshell", vshell); code != 1 || !strings.Contains(errs, "--replace-user-data") {
-		t.Errorf("Imager's user-data: exit %d, %s", code, errs)
-	}
-	if read(t, boot, "user-data") != imager {
-		t.Error("Imager's user-data was overwritten")
-	}
-	if code, _, errs := runTool(t, "card", boot, "--vshell", vshell, "--replace-user-data"); code != 0 {
-		t.Errorf("with --replace-user-data: exit %d, %s", code, errs)
-	}
-
+func TestCardRefusesWhatTheConsoleCannotRun(t *testing.T) {
 	amd64 := fakeProgram(t, filepath.Join(t.TempDir(), "vshell"), elf.EM_X86_64)
-	if code, _, errs := runTool(t, "card", bootPartition(t), "--vshell", amd64); code != 1 || !strings.Contains(errs, "linux/arm64") {
+	if code, _, errs := runTool(t, "card", t.TempDir(), "--vshell", amd64); code != 1 || !strings.Contains(errs, "linux/arm64") {
 		t.Errorf("an amd64 dashboard: exit %d, %s", code, errs)
 	}
-}
-
-func TestQEMUCard(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "card")
-	vshell := fakeProgram(t, filepath.Join(t.TempDir(), "vshell"), elf.EM_AARCH64)
-	code, out, errs := runTool(t, "card", "--target", "qemu", dir, "--vshell", vshell, "--game", game(t, "pc", elf.EM_X86_64))
+	dir := t.TempDir()
+	code, out, errs := runTool(t, "card", dir, "--game", game(t, "pc", elf.EM_X86_64))
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
-	for _, f := range []string{"config.txt", "cmdline.txt", "userconf.txt", "vedutaos/vedutaos-ili9341.bin"} {
-		if exists(dir, f) {
-			t.Errorf("%s on a card for QEMU", f)
-		}
-	}
-	if !strings.Contains(read(t, dir, "vedutaos/env"), "VEDUTA_SCALE=4\n") {
-		t.Error("QEMU's card does not draw at a quarter of the emulated screen")
-	}
 	if !strings.Contains(out, "built for amd64") {
-		t.Errorf("a game the console cannot run is not pointed out:\n%s", out)
+		t.Errorf("an amd64 game is listed without a warning:\n%s", out)
+	}
+	if code, _, errs := runTool(t, "card", dir, "--ssh-key", filepath.Join(dir, "missing.pub")); code != 1 {
+		t.Errorf("a missing key file: exit %d, %s", code, errs)
 	}
 }
 
-// Run from its source tree with no dashboard at hand, the tool builds one.
 func TestDashboardBuiltFromSource(t *testing.T) {
-	var root string
 	saved := buildVShell
 	defer func() { buildVShell = saved }()
+	built := ""
 	buildVShell = func(r, out string) error {
-		root = r
+		built = r
 		fakeProgram(t, out, elf.EM_AARCH64)
 		return nil
 	}
-	dir := t.TempDir()
-	if code, _, errs := runTool(t, "card", "--target", "qemu", dir); code != 0 {
-		t.Fatalf("exit %d: %s", code, errs)
+	p, cleanup, err := findVShell("", os.Stderr)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "cmd", "vshell", "main.go")); err != nil {
-		t.Errorf("built from %q, which is not the source tree", root)
+	defer cleanup()
+	if root, _ := sourceRoot(); built != root || !exists(filepath.Dir(p), "vshell") {
+		t.Errorf("built from %q, got %q", built, p)
 	}
-	if !exists(dir, "vedutaos/vshell") {
-		t.Error("no dashboard on the card")
+	if p, _, _ := findVShell("/x/vshell", os.Stderr); p != "/x/vshell" {
+		t.Errorf("--vshell ignored: %q", p)
 	}
 }
 
 func TestParsePins(t *testing.T) {
-	got, err := parsePins("dc=22, backlight=none", provision.DefaultPins)
-	if err != nil || got != (provision.Pins{DC: 22, Reset: 25, Backlight: -1}) {
+	got, err := parsePins("dc=22,reset=none,backlight=none", image.DefaultPins)
+	if err != nil || got != (image.Pins{DC: 22, Reset: -1, Backlight: -1}) {
 		t.Errorf("%+v %v", got, err)
 	}
-	for _, bad := range []string{"dc", "dc=x", "cs=8", "reset=-3"} {
-		if _, err := parsePins(bad, provision.DefaultPins); err == nil {
+	for _, bad := range []string{"dc=none", "cs=8", "dc=x", "dc"} {
+		if _, err := parsePins(bad, image.DefaultPins); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
 	}
@@ -215,25 +158,18 @@ func TestParsePins(t *testing.T) {
 
 func TestUsage(t *testing.T) {
 	if code, _, _ := runTool(t); code != 2 {
-		t.Error("no command")
+		t.Error("no command should fail")
 	}
 	if code, _, _ := runTool(t, "flash"); code != 2 {
-		t.Error("unknown command")
+		t.Error("an unknown command should fail")
 	}
 	if code, out, _ := runTool(t, "version"); code != 0 || out != "vedutaos dev\n" {
 		t.Errorf("version: %d %q", code, out)
 	}
 	if code, _, _ := runTool(t, "card"); code != 2 {
-		t.Error("card without a folder")
+		t.Error("card without a folder should fail")
 	}
-	if code, _, errs := runTool(t, "card", t.TempDir(), "--scale", "9", "--vshell", "x"); code != 2 || !strings.Contains(errs, "scale") {
+	if code, _, errs := runTool(t, "card", t.TempDir(), "--scale", "9"); code != 2 || !strings.Contains(errs, "scale") {
 		t.Errorf("scale 9: %d %s", code, errs)
-	}
-	boot := bootPartition(t)
-	if code, _, errs := runTool(t, "card", boot, "--rotate", "180", "--vshell", "x"); code != 2 || !strings.Contains(errs, "rotate") {
-		t.Errorf("rotate 180: %d %s", code, errs)
-	}
-	if exists(boot, "vedutaos") {
-		t.Error("a refused card was written to")
 	}
 }

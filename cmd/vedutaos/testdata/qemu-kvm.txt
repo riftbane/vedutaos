@@ -8,14 +8,18 @@ host
 2
 -m
 1G
--bios
-/usr/share/AAVMF/AAVMF_CODE.fd
+-kernel
+/i/vmlinuz
+-initrd
+/i/initrd.img
+-append
+root=PARTUUID=0000abcd-02 rootfstype=ext4 rootwait console=ttyAMA0 vt.global_cursor_default=0 consoleblank=0
 -blockdev
 driver=qcow2,node-name=disk,file.driver=file,file.filename=/d.qcow2
 -device
-virtio-blk-pci,drive=disk,bootindex=0
+virtio-blk-pci,drive=disk
 -blockdev
-driver=vvfat,node-name=card,dir=/card,label=CIDATA,read-only=on
+driver=vvfat,node-name=card,dir=/card,label=VEDUTA,read-only=on
 -device
 virtio-blk-pci,drive=card
 -device

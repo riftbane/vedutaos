@@ -7,15 +7,19 @@ cortex-a72
 -smp
 4
 -m
-2G
--bios
-/usr/share/qemu-efi-aarch64/QEMU_EFI.fd
+1G
+-kernel
+/src/vedutaos/out/vmlinuz
+-initrd
+/src/vedutaos/out/initrd.img
+-append
+root=PARTUUID=4d8fd085-02 rootfstype=ext4 rootwait console=ttyAMA0 vt.global_cursor_default=0 consoleblank=0
 -blockdev
 driver=qcow2,node-name=disk,file.driver=file,file.filename=/home/me/.cache/vedutaos/qemu/console.qcow2
 -device
-virtio-blk-pci,drive=disk,bootindex=0
+virtio-blk-pci,drive=disk
 -blockdev
-driver=vvfat,node-name=card,dir=/home/me/.cache/vedutaos/qemu/card,label=CIDATA,read-only=on
+driver=vvfat,node-name=card,dir=/home/me/.cache/vedutaos/qemu/card,label=VEDUTA,read-only=on
 -device
 virtio-blk-pci,drive=card
 -device

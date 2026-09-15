@@ -12,124 +12,63 @@ import (
 	"strings"
 
 	"github.com/riftbane/vedutaos/card"
+	"github.com/riftbane/vedutaos/image"
 	"github.com/riftbane/vedutaos/install"
-	"github.com/riftbane/vedutaos/panel"
-	"github.com/riftbane/vedutaos/provision"
 )
 
-// cardSettings are the flags that describe a card, shared by the card and qemu commands.
+// cardSettings are the flags that describe what goes onto a card, shared by the card and
+// qemu commands. The console itself is in the image; a card carries games, settings,
+// ssh keys and, to update a console from a PC, a dashboard.
 type cardSettings struct {
-	games           repeated
-	panel           string
-	rotate          int
-	rgb, invert     bool
-	spiSpeed        int
-	pins            string
-	scale           int
-	fb, pad         string
-	sshKeys         repeated
-	vshell          string
-	replaceUserData bool
+	games   repeated
+	scale   int
+	fb, pad string
+	sshKeys repeated
+	vshell  string
 }
 
-func (s *cardSettings) register(fs *flag.FlagSet, target provision.Target) {
+func (s *cardSettings) register(fs *flag.FlagSet) {
 	fs.Var(&s.games, "game", "a game to put on the card: a game folder, a release `archive` (.tar.gz or .zip) or a Veduta project; repeat for more")
-	if target == provision.Pi {
-		fs.StringVar(&s.panel, "panel", "ili9341", "the panel wired to SPI0: ili9341, or none to use HDMI")
-		fs.IntVar(&s.rotate, "rotate", 90, "how far the panel is turned to lie in landscape: 90 or 270")
-		fs.BoolVar(&s.rgb, "rgb", false, "the panel's subpixels are red-green-blue (most are blue-green-red)")
-		fs.BoolVar(&s.invert, "invert", false, "the panel shows colours inverted without it (common on IPS modules)")
-		fs.IntVar(&s.spiSpeed, "spi-speed", provision.DefaultSPISpeed, "SPI clock of the panel, in `hertz`")
-		fs.StringVar(&s.pins, "pins", "", "GPIO lines of the panel, BCM numbers, as `dc=24,reset=25,backlight=18`; none for a line not connected")
-		fs.BoolVar(&s.replaceUserData, "replace-user-data", false, "overwrite a user-data file that another tool wrote (Raspberry Pi Imager's customisation)")
-	}
-	fs.IntVar(&s.scale, "scale", 0, "VEDUTA_SCALE, `1-8` (default 1 on a Pi, 4 in QEMU)")
+	fs.IntVar(&s.scale, "scale", 0, "VEDUTA_SCALE, `1-8`: how many screen pixels each panel pixel covers (default: the console's, 1; 4 in QEMU)")
 	fs.StringVar(&s.fb, "fb", "", "VEDUTA_FB: the framebuffer to draw on, when the engine's choice is wrong")
 	fs.StringVar(&s.pad, "pad", "", "VEDUTA_PAD: the one input device to read")
 	fs.Var(&s.sshKeys, "ssh-key", "a public key `file` whose keys may log in as veduta over ssh; repeat for more")
-	fs.StringVar(&s.vshell, "vshell", "", "the dashboard `program` for linux/arm64 (default: vshell-arm64 beside this program, or built from source)")
+	fs.StringVar(&s.vshell, "vshell", "", "a dashboard `program` for linux/arm64 that replaces the image's while on the card")
 }
 
-// options turns the flags into what the card is made from.
-func (s *cardSettings) options(target provision.Target) (provision.Options, panel.Options, error) {
-	o := provision.Options{Target: target, Scale: s.scale, FB: s.fb, Pad: s.pad, Pins: provision.DefaultPins, SPISpeed: s.spiSpeed}
-	if o.Scale == 0 {
-		o.Scale = 1
-		if target == provision.QEMU {
-			o.Scale = 4
-		}
+func (s *cardSettings) validate() error {
+	if s.scale < 0 || s.scale > 8 {
+		return errors.New("--scale must be 1 to 8")
 	}
-	switch s.panel {
-	case "", "none":
-	case "ili9341":
-		o.Panel = target == provision.Pi
-	default:
-		return o, panel.Options{}, fmt.Errorf("unknown panel %q (want ili9341 or none)", s.panel)
-	}
-	if s.pins != "" {
-		pins, err := parsePins(s.pins, o.Pins)
-		if err != nil {
-			return o, panel.Options{}, err
-		}
-		o.Pins = pins
-	}
-	for _, f := range s.sshKeys {
-		data, err := os.ReadFile(f)
-		if err != nil {
-			return o, panel.Options{}, err
-		}
-		for _, l := range strings.Split(string(data), "\n") {
-			if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
-				o.SSHKeys = append(o.SSHKeys, l)
-			}
-		}
-	}
-	p := panel.Options{Rotate: s.rotate, RGB: s.rgb, Invert: s.invert}
-	if o.Panel {
-		if _, err := panel.ILI9341(p); err != nil {
-			return o, p, err
-		}
-	}
-	return o, p, o.Validate()
+	return nil
 }
 
-func parsePins(s string, pins provision.Pins) (provision.Pins, error) {
-	for _, part := range strings.Split(s, ",") {
-		name, value, ok := strings.Cut(strings.TrimSpace(part), "=")
-		n := -1
-		if value != "none" {
-			v, err := strconv.Atoi(value)
-			if err != nil || v < 0 {
-				ok = false
-			}
-			n = v
-		}
-		if !ok {
-			return pins, fmt.Errorf("--pins: %q is not name=GPIO number", part)
-		}
-		switch name {
-		case "dc":
-			pins.DC = n
-		case "reset":
-			pins.Reset = n
-		case "backlight":
-			pins.Backlight = n
-		default:
-			return pins, fmt.Errorf("--pins: unknown line %q (want dc, reset, backlight)", name)
-		}
+// env is the card's settings file, or nil when every setting is the console's own.
+func (s *cardSettings) env() []byte {
+	if s.scale == 0 && s.fb == "" && s.pad == "" {
+		return nil
 	}
-	return pins, nil
+	var b strings.Builder
+	b.WriteString("# VedutaOS settings, read each time the dashboard starts; written by vedutaos card.\n")
+	if s.scale != 0 {
+		fmt.Fprintf(&b, "VEDUTA_SCALE=%d\n", s.scale)
+	}
+	if s.fb != "" {
+		b.WriteString("VEDUTA_FB=" + s.fb + "\n")
+	}
+	if s.pad != "" {
+		b.WriteString("VEDUTA_PAD=" + s.pad + "\n")
+	}
+	return []byte(b.String())
 }
 
 func cardCommand(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("vedutaos card", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var s cardSettings
-	target := string(provision.Pi)
-	fs.StringVar(&target, "target", target, "what the card is for: pi (a Raspberry Pi OS boot partition) or qemu (a folder)")
-	s.register(fs, provision.Pi)
+	s.register(fs)
 	fs.Usage = func() {
-		fmt.Fprint(stderr, "usage: vedutaos card <dir> [flags]\n\n<dir> is the boot partition of a Raspberry Pi OS Lite (64-bit) card, as this PC\nsees it (E:\\ on Windows), or with -target qemu any folder.\n\n")
+		fmt.Fprint(stderr, "usage: vedutaos card <dir> [flags]\n\n<dir> is the card as this PC sees it: the boot partition of a VedutaOS card (E:\\ on\nWindows), a USB stick labelled "+card.Label+", or a folder for QEMU.\n\n")
 		fs.PrintDefaults()
 	}
 	rest, err := parse(fs, args)
@@ -140,99 +79,57 @@ func cardCommand(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return 2
 	}
-	o, p, err := s.options(provision.Target(target))
-	if err != nil {
+	if err := s.validate(); err != nil {
 		fmt.Fprintln(stderr, "vedutaos card:", err)
 		return 2
 	}
-	if err := makeCard(rest[0], o, p, &s, stdout); err != nil {
+	if err := makeCard(rest[0], &s, stdout); err != nil {
 		fmt.Fprintln(stderr, "vedutaos card:", err)
 		return 1
 	}
-	if o.Target == provision.Pi {
-		fmt.Fprintf(stdout, "\nPut the card in the Raspberry Pi and switch it on. The first start installs the console\nand restarts once; then the dashboard appears. Later, games are folders dropped into %s.\n",
-			filepath.Join(rest[0], provision.Games))
+	if err := describe(stdout, rest[0]); err != nil {
+		fmt.Fprintln(stderr, "vedutaos card:", err)
+		return 1
 	}
 	return 0
 }
 
-// makeCard writes the console and the games onto the card in dir.
-func makeCard(dir string, o provision.Options, p panel.Options, s *cardSettings, out io.Writer) error {
-	if o.Target == provision.Pi {
-		for _, f := range []string{provision.ConfigFile, provision.CmdlineFile} {
-			if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
-				return fmt.Errorf("%s has no %s: it is not the boot partition of a Raspberry Pi OS card", dir, f)
-			}
+// makeCard writes the games, settings, keys and dashboard the flags name onto the card in
+// dir. What is not named is left as it is, so a card can be written again for one more game.
+func makeCard(dir string, s *cardSettings, out io.Writer) error {
+	if err := os.MkdirAll(filepath.Join(dir, card.Dir), 0o755); err != nil {
+		return err
+	}
+	if s.vshell != "" {
+		if arch, err := install.Arch(s.vshell); err != nil || arch != "arm64" {
+			return fmt.Errorf("%s is not a linux/arm64 program (%s%v); the console cannot run it", s.vshell, arch, errOrEmpty(err))
 		}
-		if ud, err := os.ReadFile(filepath.Join(dir, provision.UserDataFile)); err == nil && !provision.Replaceable(ud) && !s.replaceUserData {
-			return fmt.Errorf("%s holds a user-data file written by another tool (Raspberry Pi Imager's customisation?). Write the card again without customisation, or pass --replace-user-data", dir)
-		}
-	} else if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(dir, provision.Dir), 0o755); err != nil {
-		return err
-	}
-
-	vshell, cleanup, err := findVShell(s.vshell, out)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	if arch, err := install.Arch(vshell); err != nil || arch != "arm64" {
-		return fmt.Errorf("%s is not a linux/arm64 program (%s%v); the console cannot run it", vshell, arch, errOrEmpty(err))
-	}
-	if err := copyFile(vshell, filepath.Join(dir, filepath.FromSlash(provision.VShell))); err != nil {
-		return err
-	}
-
-	var firmware []byte
-	fwPath := filepath.Join(dir, filepath.FromSlash(provision.Firmware))
-	if o.Panel {
-		cmds, err := panel.ILI9341(p)
-		if err != nil {
+		if err := copyFile(s.vshell, filepath.Join(dir, filepath.FromSlash(card.VShell))); err != nil {
 			return err
 		}
-		if firmware, err = panel.Encode(cmds); err != nil {
+	}
+	if env := s.env(); env != nil {
+		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(card.EnvFile)), env, 0o644); err != nil {
 			return err
 		}
-		if err := os.WriteFile(fwPath, firmware, 0o644); err != nil {
-			return err
-		}
-	} else if err := os.Remove(fwPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
 	}
-
-	userData, err := provision.UserData(o)
-	if err != nil {
-		return err
-	}
-	files := map[string][]byte{
-		provision.EnvFile:      provision.Env(o),
-		provision.UserDataFile: userData,
-		provision.MetaDataFile: provision.MetaData(userData, firmware),
-	}
-	if o.Target == provision.Pi {
-		files[provision.UserConfFile] = provision.UserConf()
-		for _, name := range []string{provision.ConfigFile, provision.CmdlineFile} {
-			old, err := os.ReadFile(filepath.Join(dir, name))
+	if len(s.sshKeys) != 0 {
+		var keys []byte
+		for _, f := range s.sshKeys {
+			b, err := os.ReadFile(f)
 			if err != nil {
 				return err
 			}
-			if name == provision.ConfigFile {
-				files[name] = provision.ConfigTxt(old, o)
-			} else if files[name], err = provision.Cmdline(old); err != nil {
-				return err
+			if len(b) == 0 || !strings.Contains(string(b), " ") {
+				return fmt.Errorf("%s does not hold a public key", f)
 			}
+			keys = append(keys, strings.TrimRight(string(b), "\r\n")+"\n"...)
 		}
-	}
-	for name, data := range files {
-		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(name)), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(card.KeysFile)), keys, 0o644); err != nil {
 			return err
 		}
 	}
-
-	games := filepath.Join(dir, provision.Games)
+	games := filepath.Join(dir, card.Games)
 	if err := os.MkdirAll(games, 0o755); err != nil {
 		return err
 	}
@@ -242,7 +139,7 @@ func makeCard(dir string, o provision.Options, p panel.Options, s *cardSettings,
 			return err
 		}
 	}
-	return describe(out, dir, o)
+	return nil
 }
 
 func errOrEmpty(err error) string {
@@ -253,16 +150,14 @@ func errOrEmpty(err error) string {
 }
 
 // describe says what the card now holds, listing the games as the console will list them.
-func describe(out io.Writer, dir string, o provision.Options) error {
-	what := "QEMU"
-	if o.Target == provision.Pi {
-		what = "a Raspberry Pi on HDMI"
-		if o.Panel {
-			what = "a Raspberry Pi with an ILI9341 panel"
+func describe(out io.Writer, dir string) error {
+	fmt.Fprintf(out, "\nCard in %s\n", dir)
+	for _, f := range []struct{ name, what string }{{card.VShell, "a dashboard replacing the image's"}, {card.EnvFile, "settings"}, {card.KeysFile, "ssh keys"}} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f.name))); err == nil {
+			fmt.Fprintf(out, "  %-24s %s\n", f.name, f.what)
 		}
 	}
-	fmt.Fprintf(out, "\nCard for %s in %s\n", what, dir)
-	cards, err := card.ScanFor(filepath.Join(dir, provision.Games), "arm64")
+	cards, err := card.ScanFor(filepath.Join(dir, card.Games), "arm64")
 	if err != nil {
 		return err
 	}
@@ -287,6 +182,39 @@ func describe(out io.Writer, dir string, o provision.Options) error {
 	return nil
 }
 
+// parsePins reads "dc=24,reset=25,backlight=18"; a name left out keeps its value in pins,
+// and "none" is a line not connected.
+func parsePins(s string, pins image.Pins) (image.Pins, error) {
+	for _, part := range strings.Split(s, ",") {
+		name, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		n := -1
+		if value != "none" {
+			v, err := strconv.Atoi(value)
+			if err != nil || v < 0 {
+				ok = false
+			}
+			n = v
+		}
+		if !ok {
+			return pins, fmt.Errorf("--pins: %q is not name=GPIO number", part)
+		}
+		switch name {
+		case "dc":
+			if n < 0 {
+				return pins, errors.New("--pins: dc must be connected")
+			}
+			pins.DC = n
+		case "reset":
+			pins.Reset = n
+		case "backlight":
+			pins.Backlight = n
+		default:
+			return pins, fmt.Errorf("--pins: unknown line %q (dc, reset, backlight)", name)
+		}
+	}
+	return pins, nil
+}
+
 // buildVShell builds the dashboard for the console from the source tree at root.
 var buildVShell = func(root, out string) error {
 	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", out, "./cmd/vshell")
@@ -296,7 +224,7 @@ var buildVShell = func(root, out string) error {
 	return cmd.Run()
 }
 
-// findVShell finds the dashboard program for the console: the one named, the one shipped
+// findVShell finds the dashboard program for the image: the one named, the one shipped
 // beside this program, or one built from the source tree this program runs in.
 func findVShell(named string, out io.Writer) (string, func(), error) {
 	none := func() {}

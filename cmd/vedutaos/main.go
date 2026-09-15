@@ -1,12 +1,12 @@
-// Command vedutaos makes VedutaOS cards on a PC.
+// Command vedutaos makes the VedutaOS image and puts games on cards, from a PC.
 //
-//	vedutaos card <dir> [flags]              write the console and games onto a card
-//	vedutaos qemu [flags] [-- qemu-args]     make a card and boot the console in QEMU
+//	vedutaos image [flags]                   build the image (Linux, root)
+//	vedutaos qemu [flags] [-- qemu-args]     boot the image in QEMU with a card of games
+//	vedutaos card <dir> [flags]              put games, settings and keys onto a card
 //
-// A card for a Raspberry Pi is the boot partition of a freshly written Raspberry Pi OS Lite
-// (64-bit) card, as a PC sees it. A card for QEMU is a folder that QEMU shows the emulated
-// machine as a disk. Either way the machine installs the console by itself the first time it
-// starts; nothing is typed on it.
+// The image is one file for a Raspberry Pi and for QEMU. A card is the boot partition of a
+// console, a USB stick labelled VEDUTA, or the folder QEMU shows the emulated machine as a
+// disk; games are folders on it, and nothing is typed on the console.
 package main
 
 import (
@@ -24,13 +24,14 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-const usage = `vedutaos makes VedutaOS cards.
+const usage = `vedutaos makes the VedutaOS image and its cards.
 
-  vedutaos card <dir> [flags]            write the console and games onto a card
-  vedutaos qemu [flags] [-- qemu-args]   make a card and boot the console in QEMU
+  vedutaos image [flags]                 build the image (Linux, root)
+  vedutaos qemu [flags] [-- qemu-args]   boot the image in QEMU with a card of games
+  vedutaos card <dir> [flags]            put games, settings and keys onto a card
   vedutaos version                       print this program's version
 
-Run "vedutaos card -h" or "vedutaos qemu -h" for the flags.
+Run "vedutaos <command> -h" for the flags.
 `
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -43,6 +44,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cardCommand(args[1:], stdout, stderr)
 	case "qemu":
 		return qemuCommand(args[1:], stdout, stderr)
+	case "image":
+		return imageCommand(args[1:], stdout, stderr)
 	case "version", "-version", "--version":
 		fmt.Fprintln(stdout, "vedutaos", version)
 		return 0
