@@ -12,7 +12,17 @@
 
 ### Changed
 
-- Built against engine v1.1.0. The dashboard closes on Home as on Select+Start; the demo a
+- The console is an image, `vedutaos.img`, built by `vedutaos image` from Raspberry Pi OS
+  Lite (64-bit): the dashboard, its units, the panel's firmware and overlay, the user
+  `veduta` admitted by ssh key, no first-boot dialog, and Debian's arm64 kernel so that the
+  same image boots on QEMU. cloud-init provisioning of a stock card is gone, and with it
+  the two ways a console was made.
+- `vedutaos qemu` boots the image (built in `out/`, or `--image`) with a card of games; no
+  Debian cloud image is downloaded and no UEFI firmware is needed.
+- `vedutaos card <dir>` writes games, and only when asked settings (`--scale`, `--fb`,
+  `--pad`), ssh keys (`--ssh-key`) and a dashboard replacing the image's (`--vshell`).
+  A card is the boot partition, a USB stick labelled `VEDUTA`, or a folder for QEMU.
+- Built against engine v1.1.1. The dashboard closes on Home as on Select+Start; the demo a
   release ships is the engine's v1.1.0 template, which walks with the stick.
 
 ## v0.1.0 — 2026-09-14
