@@ -118,7 +118,7 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	var (
 		s        cardSettings
-		img      = fs.String("image", "", "the VedutaOS `image` to boot (default: out/"+image.ImageName+" in the source tree, else the one in this user's cache directory)")
+		img      = fs.String("image", "", "the VedutaOS `image` to boot (default: this release's, fetched once; in the source tree, out/"+image.ImageName+")")
 		kernel   = fs.String("kernel", "", "the kernel QEMU boots (default: "+image.KernelName+" beside the image)")
 		initrd   = fs.String("initrd", "", "its initramfs (default: "+image.InitrdName+" beside the image)")
 		cardDir  = fs.String("card", "", "the card `folder` (default: in this user's cache directory)")
@@ -166,10 +166,8 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 	if *img == "" {
 		if root, ok := sourceRoot(); ok && fileOK(filepath.Join(root, "out", image.ImageName)) {
 			*img = filepath.Join(root, "out", image.ImageName)
-		} else if fileOK(filepath.Join(cache, image.ImageName)) {
-			*img = filepath.Join(cache, image.ImageName)
-		} else {
-			return fail(fmt.Errorf("no image: pass --image, or build one with \"vedutaos image\" on Linux (%s and %s must be beside it)", image.KernelName, image.InitrdName))
+		} else if *img, err = fetchRelease(version, stdout); err != nil {
+			return fail(err)
 		}
 	}
 	if *img, err = filepath.Abs(*img); err != nil {

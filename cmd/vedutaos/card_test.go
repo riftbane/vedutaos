@@ -160,8 +160,11 @@ func TestUsage(t *testing.T) {
 	if code, _, _ := runTool(t); code != 2 {
 		t.Error("no command should fail")
 	}
-	if code, _, _ := runTool(t, "flash"); code != 2 {
+	if code, _, _ := runTool(t, "burn"); code != 2 {
 		t.Error("an unknown command should fail")
+	}
+	if code, _, _ := runTool(t, "flash"); code != 2 {
+		t.Error("flash without a device should fail")
 	}
 	if code, out, _ := runTool(t, "version"); code != 0 || out != "vedutaos dev\n" {
 		t.Errorf("version: %d %q", code, out)

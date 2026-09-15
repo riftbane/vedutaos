@@ -1,9 +1,10 @@
 # Trying the console without a Raspberry Pi
 
-You can run the whole console on a PC before any hardware arrives: the dashboard, the card,
-launching a game and coming back. `vedutaos qemu` does it in one command. See
-[VedutaOS on QEMU](quickstart-qemu.md). What you cannot do is test the panel, and it is worth
-knowing why before spending an evening on it.
+The image boots on a PC before any hardware arrives: the dashboard, the card, launching a
+game and coming back. `vedutaos qemu` does it in one command (see
+[VedutaOS on QEMU](quickstart-qemu.md)), and `go test ./test/e2e` does it headless and
+checks what the screen shows. What you cannot do is test the panel, and it is worth knowing
+why before spending an evening on it.
 
 ## What cannot be emulated, and why
 
@@ -19,34 +20,23 @@ half is honest hardware work.
 
 What emulation does give you is the other half, and it is the larger one:
 
-- a real `linux/arm64` binary on a real ARM64 kernel;
+- the very image a Pi gets, its units, its user and its settings, on a real ARM64 kernel;
 - finding a framebuffer, drawing the dashboard and reading input;
-- scanning a card's game folders and launching a game.
-
-It also proves the way a card installs the console. The emulator's first boot runs the same
-cloud-init setup as a Raspberry Pi's, from files written the same way.
+- scanning a card's game folders, launching a game and coming back.
 
 ## What `vedutaos qemu` runs
 
-It uses QEMU's generic `virt` machine, not a Raspberry machine. On an x86-64 PC this is pure
-emulation, roughly ten times slower than native. That does not matter for a dashboard and is
-noticeable for a game. On an ARM64 Linux PC with KVM, or a Mac with Apple silicon, it uses
-hardware virtualisation and runs at full speed.
+It uses QEMU's generic `virt` machine, not a Raspberry machine, and boots the image's
+Debian arm64 kernel directly, the one `vedutaos image` installs beside the Pi kernels for
+this purpose. On an x86-64 PC this is pure emulation, roughly ten times slower than native.
+That does not matter for a dashboard and is noticeable for a game. On an ARM64 Linux PC
+with KVM, or a Mac with Apple silicon, it uses hardware virtualisation and runs at full
+speed.
 
-The guest is Debian 13's *generic* arm64 cloud image. Unlike the *nocloud* image it carries
-cloud-init, and cloud-init looks for its settings on a FAT disk labelled `CIDATA`. QEMU's
-`vvfat` driver makes that disk from the card folder on the PC. This works on a Windows host,
-where 9p and virtiofs cannot be built. The files on the card are the ones a Raspberry Pi
-card carries:
-
-- `user-data` installs a systemd unit that runs the dashboard from the card on the first
-  virtual terminal, and takes that terminal from the login prompt;
-- `vedutaos/env` holds the dashboard's settings (`VEDUTA_SCALE=4` here: a quarter of the
-  1280×960 screen each way is the panel's 320×240);
-- the unit takes the framebuffer from the text console while the dashboard runs, the step
-  the old manual procedure did with `chvt` and `vtconsole/bind`.
-
-To see or change the exact command, run `vedutaos qemu --print`.
+The card is a folder on the PC that QEMU's `vvfat` driver shows the machine as a FAT disk
+labelled `VEDUTA`; the console mounts a volume with that label over its boot partition,
+exactly as it would a USB stick. This works on a Windows host, where 9p and virtiofs cannot
+be built. To see or change the exact command, run `vedutaos qemu --print`.
 
 ## Two things that will not work, whatever you try
 
@@ -73,7 +63,7 @@ VEDUTA_BACKEND=fbdev VEDUTAOS_GAMES=/path/to/card/games ./vshell
 ```
 
 A Raspberry Pi 4 or 5 costs less than the time any substitute takes. If the target is a Pi
-5, emulation is not an alternative, only a stopgap. Making its card is described in
+5, emulation is not an alternative, only a stopgap. Writing its card is described in
 [VedutaOS on a Raspberry Pi](quickstart-pi.md).
 
 ## What still needs the board

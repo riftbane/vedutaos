@@ -3,6 +3,7 @@
 //	vedutaos image [flags]                   build the image (Linux, root)
 //	vedutaos qemu [flags] [-- qemu-args]     boot the image in QEMU with a card of games
 //	vedutaos card <dir> [flags]              put games, settings and keys onto a card
+//	vedutaos flash <device> [flags]          write the image onto a card (Linux, macOS)
 //
 // The image is one file for a Raspberry Pi and for QEMU. A card is the boot partition of a
 // console, a USB stick labelled VEDUTA, or the folder QEMU shows the emulated machine as a
@@ -29,6 +30,7 @@ const usage = `vedutaos makes the VedutaOS image and its cards.
   vedutaos image [flags]                 build the image (Linux, root)
   vedutaos qemu [flags] [-- qemu-args]   boot the image in QEMU with a card of games
   vedutaos card <dir> [flags]            put games, settings and keys onto a card
+  vedutaos flash <device> [flags]        write the image onto a card (Linux, macOS)
   vedutaos version                       print this program's version
 
 Run "vedutaos <command> -h" for the flags.
@@ -46,6 +48,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return qemuCommand(args[1:], stdout, stderr)
 	case "image":
 		return imageCommand(args[1:], stdout, stderr)
+	case "flash":
+		return flashCommand(args[1:], stdout, stderr)
 	case "version", "-version", "--version":
 		fmt.Fprintln(stdout, "vedutaos", version)
 		return 0

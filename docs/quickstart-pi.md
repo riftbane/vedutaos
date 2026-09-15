@@ -1,59 +1,52 @@
 # VedutaOS on a Raspberry Pi
 
-Make a console card for a Raspberry Pi 5 or Zero 2 W from a Windows or Linux PC. It takes
-three steps, and nothing is typed on the Pi.
+Write the image to a card, put a game on it, switch the Pi on. Nothing is typed on the Pi.
 
-## 1. Write Raspberry Pi OS Lite
+## 1. Write the image
 
-In [Raspberry Pi Imager](https://www.raspberrypi.com/software/), choose your board, then
-**Raspberry Pi OS (other) → Raspberry Pi OS Lite (64-bit)**, then the SD card. When Imager
-offers to customise the settings, skip it. The console writes its own first-boot settings,
-and `vedutaos` will not overwrite ones Imager wrote.
+Get `vedutaos.img.xz` from the [latest release](https://github.com/riftbane/vedutaos/releases/latest),
+and `vedutaos` for your PC from the same page (`vedutaos_<version>_windows_amd64.zip`,
+`…_linux_amd64.tar.gz`; on Windows unpack it to a folder such as `C:\vedutaos` and run it
+from a Command Prompt there).
 
-The image must be Trixie from November 2025 or later, when Raspberry Pi OS started reading
-first-boot settings from the card with cloud-init. Imager always offers the current image.
+- **Windows:** [Raspberry Pi Imager](https://www.raspberrypi.com/software/), **Use custom**,
+  pick `vedutaos.img.xz`, then the card. Skip the customisation when Imager offers it.
+- **Linux, macOS:** `sudo vedutaos flash /dev/sdX` (the whole card, as `lsblk` or
+  `diskutil list` shows it; `/dev/rdiskN` on a Mac). Without a downloaded image it fetches
+  this release's once. Imager works here too.
 
-## 2. Put the console on the card
+## 2. Put a game on the card
 
-Take the card out and put it back in. The PC shows its boot partition as a drive
-(`bootfs`, say `E:`). Get `vedutaos` as described in
-[VedutaOS on QEMU](quickstart-qemu.md#2-get-vedutaos). Then, in its folder, run:
+Take the card out and put it back in. The PC shows its boot partition as a small drive
+(`bootfs`, `E:` on Windows). Then:
 
 ```bat
 vedutaos card E:\ --game games\demo
 ```
 
-`--game` takes a game folder, a release archive or a Veduta project, and can be repeated.
-`vedutaos` lists the games as the dashboard will list them.
+`--game` takes a game folder, a release archive (`gems_v1.2.0_linux_arm64.tar.gz`) or a
+Veduta project (built for the console, which needs Go), and can be repeated. Dragging a
+game's folder into `games` does the same. `vedutaos` lists the games as the dashboard will.
 
-It writes these files onto the partition:
+Other things a card can carry, each written only when asked:
 
-| File | What it is for |
-|---|---|
-| `vedutaos/vshell` | the dashboard |
-| `vedutaos/env` | the dashboard's settings (`VEDUTA_SCALE`, `VEDUTA_FB`, `VEDUTA_PAD`) |
-| `vedutaos/vedutaos-ili9341.bin` | the panel's start-up sequence |
-| `games/` | the games |
-| `user-data`, `meta-data` | what the Pi does on its first start |
-| `userconf.txt` | the Pi's user, so no set-up wizard waits for a keyboard |
-| `config.txt` | one marked block: SPI and the panel's overlay |
-| `cmdline.txt` | two settings: no text cursor, no screen blanking |
-
-Everything else on the partition stays as Imager wrote it.
+- `--ssh-key C:\Users\me\.ssh\id_ed25519.pub`: log in as `veduta` over ssh (a Pi 5 on
+  Ethernet; the console itself needs no network).
+- `--scale`, `--fb`, `--pad`: the dashboard's settings, in `vedutaos/env`.
+- `--vshell vshell-arm64`: a newer dashboard than the image's, run from the card.
 
 ## 3. Switch it on
 
-On its first start the Pi installs the console and restarts once. That takes a few minutes,
-with the Pi's own messages on the panel or HDMI. After the restart the dashboard appears,
-and it appears again at every start after that.
+The dashboard appears on the panel. Arrows or the D-pad move, A starts a game, Home (or
+Select and Start together) returns to the dashboard. The first start takes a little longer:
+the card's root partition grows to fill the card.
 
-To add a game later, put the card in the PC and drop the game's folder into `games\`, or
-run `vedutaos card E:\ --game …` again. Running `vedutaos card` again also updates the
-dashboard. If you change the panel settings, the Pi sets itself up again on its next start.
+A USB stick labelled `VEDUTA` with a `games` folder on it is a card too: plugged in at
+start, the console lists its games instead of the boot partition's.
 
 ## Wiring the panel
 
-The defaults are an ILI9341 module on SPI0 wired like this. Pin numbers are the 40-pin
+The image expects an ILI9341 module on SPI0 wired like this. Pin numbers are the 40-pin
 header's; GPIO numbers are BCM's.
 
 | Panel | Raspberry Pi |
@@ -68,50 +61,39 @@ header's; GPIO numbers are BCM's.
 | LED / BL | GPIO 18 (pin 12) |
 | SDO / MISO | not needed |
 
-Wired differently, name the lines: `--pins dc=22,reset=27,backlight=none`. Use
-`backlight=none` when the module's LED pin is tied to 3.3 V, and `reset=none` when RST is
-tied high.
-
-Other settings for the panel:
-
-- `--rotate 270`: the picture is upside down (the default is `90`).
-- `--rgb`: red and blue are swapped.
-- `--invert`: colours are inverted (common on IPS modules).
-- `--spi-speed 16000000`: the picture is garbled or flickers (the default is 32 MHz).
-- `--panel none`: no panel yet. The dashboard uses HDMI.
-
-## Logging in
-
-The Pi's user is `veduta`, with no password. To reach it over ssh, pass your public key:
-`--ssh-key C:\Users\me\.ssh\id_ed25519.pub`. The console needs no network itself. A Pi 5
-can use Ethernet. For Wi-Fi, set it in Imager's customisation, then pass
-`--replace-user-data` to `vedutaos card`. vedutaos replaces `user-data` but leaves
-`network-config`, where the network settings live.
+Wired differently, or with a panel that needs other settings, edit the marked block at the
+end of `config.txt` on the boot partition (`dtparam=reset-gpio=…,dc-gpio=…,backlight-gpio=…`,
+`speed=…`), or build an image with them: `vedutaos image --pins dc=22,reset=27,backlight=none
+--rotate 270 --rgb --invert --spi-speed 16000000`. Without a panel, the dashboard is on HDMI
+when the panel's framebuffer is absent; if a phantom panel takes its place, `--fb /dev/fb0`
+on the card names the HDMI one.
 
 ## When something is wrong
 
-Over ssh:
+Over ssh (a key given with `--ssh-key`, user `veduta`, `sudo` without a password):
 
 ```sh
-cloud-init status --long                    # did the first start's setup run, and what failed
-sudo journalctl -u vedutaos                 # what the dashboard said
-cat /sys/class/graphics/fb*/name            # the panel is the one that is not vc4drmfb
-dmesg | grep -i -e mipi -e firmware         # the panel driver and its start-up file
+systemctl status vedutaos vedutaos-card   # the dashboard, and how the card was found
+sudo journalctl -u vedutaos               # what the dashboard said
+cat /sys/class/graphics/fb*/name          # the panel is the one that is not vc4drmfb
+dmesg | grep -i -e mipi -e firmware       # the panel driver and its start-up file
+cat /etc/vedutaos-release                 # which image this is
 ```
 
-- *The Pi shows its login prompt instead of the dashboard:* the first-start setup did not
-  run. Check that the card was not customised in Imager, then run `vedutaos card` again.
+- *The Pi shows a login prompt instead of the dashboard:* `journalctl -u vedutaos`.
 - *The dashboard is on HDMI and the panel stays white:* the panel's driver did not start.
   Check the wiring, then `dmesg` for `vedutaos-ili9341.bin`.
-- *The panel shows a garbled picture:* try `--spi-speed 16000000`, then check CS and DC.
+- *The panel shows a garbled picture:* lower `speed=` in `config.txt`'s block to 16000000,
+  then check CS and DC.
 
 ## What still needs checking on real hardware
 
-None of this has been run on a Pi yet. Written from a PC, the card has been proved on QEMU,
-and each file is pinned by tests. On a board, check:
+None of this has been run on a Pi yet. The image boots and plays on QEMU with the Debian
+kernel it also carries; the Pi kernels, the panel overlay and the firmware are as Raspberry
+Pi OS ships them, untouched by the build. On a board, check:
 
-- the first start finishes and restarts once, with no user wizard;
+- the first start reaches the dashboard, with no user wizard and no login prompt;
 - the dashboard appears on the panel, the right way up and with the right colours;
 - no text cursor blinks over it;
-- with `--panel none`, the dashboard appears on HDMI;
-- a Zero 2 W's panel holds 32 MHz on SPI.
+- a Zero 2 W's panel holds 32 MHz on SPI;
+- a USB stick labelled `VEDUTA` is taken as the card.

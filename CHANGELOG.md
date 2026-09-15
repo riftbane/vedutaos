@@ -2,8 +2,23 @@
 
 ## Unreleased
 
+## v0.2.0 — 2026-09-15
+
+VedutaOS is an image. One `vedutaos.img.xz`, Raspberry Pi OS Lite with the console
+installed, for a card and for QEMU alike; the first release whose console has been booted
+and played end to end, in CI, on every change.
+
 ### Added
 
+- `vedutaos image` builds the image on Linux; the `image` workflow builds it on a runner,
+  boots it, plays, and attaches it to a tagged release with the kernel and initramfs QEMU
+  boots and a checksum file.
+- `vedutaos flash <device>` writes the image to a card on Linux and macOS, fetching this
+  release's once; Windows uses Raspberry Pi Imager.
+- `test/e2e`: the image booted headless on QEMU, the dashboard's screen against a
+  reference, a game started on A and ended on Home.
+- A USB stick labelled `VEDUTA` is taken as the card in place of the boot partition, and
+  `vedutaos/authorized_keys` on the card admits ssh as `veduta`.
 - `vedutaos qemu` gives the machine a USB tablet beside the keyboard. A game built with
   engine v1.1.0 or later reads the pointer as the console's analog stick (the middle of the
   window is rest), so the stick can be tried in emulation; the tablet follows the host
@@ -12,6 +27,8 @@
 
 ### Changed
 
+- `vedutaos qemu` without `--image` fetches this release's image; there is no card
+  `--target`, no user-data, no Debian cloud image and no UEFI firmware to find.
 - The console is an image, `vedutaos.img`, built by `vedutaos image` from Raspberry Pi OS
   Lite (64-bit): the dashboard, its units, the panel's firmware and overlay, the user
   `veduta` admitted by ssh key, no first-boot dialog, and Debian's arm64 kernel so that the

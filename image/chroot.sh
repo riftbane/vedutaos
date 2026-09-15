@@ -31,3 +31,9 @@ update-initramfs -u -k "$(ls /boot/vmlinuz-*-arm64 | sed 's#.*/vmlinuz-##')"
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*
+
+# Free space holds what apt downloaded and what was deleted; zeroed, it compresses to
+# nothing in the .img.xz.
+cat /dev/zero > /zero 2>/dev/null || true
+rm -f /zero
+sync
