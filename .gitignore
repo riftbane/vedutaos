@@ -5,8 +5,7 @@
 *.test
 *.prof
 
-# Card images and staged game folders
-/image/rootfs/usr/lib/vedutaos/vshell
+# Staged game folders
 /games/
 
 # Editors / OS
@@ -14,4 +13,3 @@
 *.swp
 .idea/
 .vscode/
-/usr/lib/vedutaos/vshell

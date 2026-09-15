@@ -1,7 +1,7 @@
 # Trying the console without a Raspberry Pi
 
-The image boots on a PC before any hardware arrives: the dashboard, the card, launching a
-game and coming back. `vedutaos qemu` does it in one command (see
+The console boots on a PC before any hardware arrives: its init, the drivers, the card, the
+dashboard, launching a game and coming back. `vedutaos qemu` does it in one command (see
 [VedutaOS on QEMU](quickstart-qemu.md)), and `go test ./test/e2e` does it headless and
 checks what the screen shows. What you cannot do is test the panel, and it is worth knowing
 why before spending an evening on it.
@@ -20,22 +20,23 @@ half is honest hardware work.
 
 What emulation does give you is the other half, and it is the larger one:
 
-- the very image a Pi gets, its units, its user and its settings, on a real ARM64 kernel;
+- the very console a Pi runs: its init, the modules it loads by hand, the card it finds and
+  mounts, its settings, on a real ARM64 kernel;
 - finding a framebuffer, drawing the dashboard and reading input;
-- scanning a card's game folders, launching a game and coming back.
+- scanning a card's game folders, launching a game, coming back, switching off.
 
 ## What `vedutaos qemu` runs
 
-It uses QEMU's generic `virt` machine, not a Raspberry machine, and boots the image's
-Debian arm64 kernel directly, the one `vedutaos image` installs beside the Pi kernels for
-this purpose. On an x86-64 PC this is pure emulation, roughly ten times slower than native.
+It uses QEMU's generic `virt` machine, not a Raspberry machine, and boots Debian's arm64
+kernel directly with the console's initramfs, the pair `vedutaos image` writes beside the
+image for this purpose; the image itself is not needed. On an x86-64 PC this is pure emulation, roughly ten times slower than native.
 That does not matter for a dashboard and is noticeable for a game. On an ARM64 Linux PC
 with KVM, or a Mac with Apple silicon, it uses hardware virtualisation and runs at full
 speed.
 
 The card is a folder on the PC that QEMU's `vvfat` driver shows the machine as a FAT disk
-labelled `VEDUTA`; the console mounts a volume with that label over its boot partition,
-exactly as it would a USB stick. This works on a Windows host, where 9p and virtiofs cannot
+labelled `VEDUTA`; the console mounts a volume with that label as its card, exactly as it
+would a USB stick. This works on a Windows host, where 9p and virtiofs cannot
 be built. To see or change the exact command, run `vedutaos qemu --print`.
 
 ## Two things that will not work, whatever you try

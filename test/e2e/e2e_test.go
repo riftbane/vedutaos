@@ -1,19 +1,20 @@
 //go:build linux
 
-// Package e2e boots the built image on QEMU and drives the console as a person would: the
-// dashboard comes up, lists the card's game, starts it on A, and comes back on Home. It is
-// the test of the image itself, so it runs only when asked:
+// Package e2e boots the console on QEMU and drives it as a player would: init brings the
+// dashboard up, the dashboard lists the card's game, starts it on A, comes back on Home,
+// and switches the machine off when it is left. The console says what it does on the
+// serial port, and that is what the test reads. It is the test of the image itself, so it
+// runs only when asked:
 //
 //	VEDUTAOS_E2E=1 go test ./test/e2e -timeout 40m
 //
-// It needs out/vedutaos.img with vmlinuz and initrd.img beside it (vedutaos image), QEMU,
-// ssh and ssh-keygen. Under emulation the boot alone takes minutes.
+// It needs out/vmlinuz and out/initrd.img (vedutaos image) and QEMU. Under emulation the
+// boot takes a few minutes.
 package e2e
 
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -24,7 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -39,28 +40,29 @@ type console struct {
 	t       *testing.T
 	qemu    *exec.Cmd
 	monitor string // unix socket of QEMU's monitor
-	ssh     []string
-	log     *os.File
+	logPath string
+	done    chan struct{} // closed when QEMU has exited
+	exit    error
 }
 
 func TestConsole(t *testing.T) {
 	if os.Getenv("VEDUTAOS_E2E") == "" {
-		t.Skip("set VEDUTAOS_E2E=1 to boot the image on QEMU")
+		t.Skip("set VEDUTAOS_E2E=1 to boot the console on QEMU")
 	}
-	for _, tool := range []string{"qemu-system-aarch64", "qemu-img", "ssh", "ssh-keygen"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Fatalf("%s is not installed", tool)
+	if _, err := exec.LookPath("qemu-system-aarch64"); err != nil {
+		t.Fatal("qemu-system-aarch64 is not installed")
+	}
+	kernel := os.Getenv("VEDUTAOS_KERNEL")
+	if kernel == "" {
+		kernel = filepath.Join("..", "..", "out", "vmlinuz")
+	}
+	if k, err := filepath.Abs(kernel); err == nil {
+		kernel = k
+	}
+	for _, f := range []string{kernel, filepath.Join(filepath.Dir(kernel), "initrd.img")} {
+		if _, err := os.Stat(f); err != nil {
+			t.Fatalf("no %s: build the image with vedutaos image, or set VEDUTAOS_KERNEL", f)
 		}
-	}
-	img := os.Getenv("VEDUTAOS_IMAGE")
-	if img == "" {
-		img = filepath.Join("..", "..", "out", "vedutaos.img")
-	}
-	if img2, err := filepath.Abs(img); err == nil {
-		img = img2
-	}
-	if _, err := os.Stat(img); err != nil {
-		t.Fatalf("no image at %s: build one with vedutaos image, or set VEDUTAOS_IMAGE", img)
 	}
 
 	work := t.TempDir()
@@ -74,24 +76,16 @@ func TestConsole(t *testing.T) {
 		t.Fatalf("finding the engine: %v", err)
 	}
 	demo := filepath.Join(strings.TrimSpace(string(engine)), "template")
-	key := filepath.Join(work, "key")
-	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
-		t.Fatalf("ssh-keygen: %v\n%s", err, out)
-	}
-	port := freePort(t)
 	monitor := filepath.Join(work, "monitor.sock")
-	logf, err := os.Create(filepath.Join(work, "qemu.log"))
+	logf, err := os.Create(filepath.Join(work, "serial.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &console{t: t, monitor: monitor, log: logf}
-	c.ssh = []string{"ssh", "-i", key, "-p", strconv.Itoa(port), "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-		"-o", "LogLevel=ERROR", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", "veduta@127.0.0.1"}
+	c := &console{t: t, monitor: monitor, logPath: logf.Name(), done: make(chan struct{})}
 
-	// The tool makes the card and boots the image as it would for a person, with the screen
-	// and the monitor moved where the test can reach them.
-	c.qemu = exec.Command(tool, "qemu", "--image", img, "--card", filepath.Join(work, "card"), "--game", demo,
-		"--ssh-key", key+".pub", "--ssh-port", strconv.Itoa(port), "--fresh",
+	// The tool makes the card and boots the console as it would for a person, with the
+	// screen and the monitor moved where the test can reach them.
+	c.qemu = exec.Command(tool, "qemu", "--kernel", kernel, "--card", filepath.Join(work, "card"), "--game", demo,
 		"--", "-display", "none", "-monitor", "unix:"+monitor+",server,nowait")
 	c.qemu.Env = append(os.Environ(), "XDG_CACHE_HOME="+filepath.Join(work, "cache"), "HOME="+work)
 	c.qemu.Stdout, c.qemu.Stderr = logf, logf
@@ -100,26 +94,27 @@ func TestConsole(t *testing.T) {
 	if err := c.qemu.Start(); err != nil {
 		t.Fatal(err)
 	}
+	go func() {
+		c.exit = c.qemu.Wait()
+		close(c.done)
+	}()
 	t.Cleanup(func() {
 		syscall.Kill(-c.qemu.Process.Pid, syscall.SIGKILL)
-		c.qemu.Wait()
+		<-c.done
 		logf.Close()
 		if t.Failed() {
 			b, _ := os.ReadFile(logf.Name())
-			t.Logf("QEMU and serial output:\n%s", tail(b, 20000))
+			t.Logf("serial output:\n%s", tail(b, 20000))
 		}
 	})
 
 	t.Log("waiting for the console to boot")
-	c.waitFor(25*time.Minute, "ssh", func() bool { return c.run("true") == nil })
-	if out, err := c.output("systemctl is-active vedutaos vedutaos-card"); err != nil || out != "active\nactive\n" {
-		t.Fatalf("units: %q %v", out, err)
-	}
-	if out, _ := c.output("findmnt -no SOURCE /boot/firmware"); !strings.HasSuffix(strings.TrimSpace(out), "vdb1") {
-		t.Errorf("the card is not mounted on /boot/firmware: %q", out)
-	}
-	if out, _ := c.output("ls /boot/firmware/games/demo"); !strings.Contains(out, "card.json") {
-		t.Errorf("the game is not on the card: %q", out)
+	c.waitLog(25*time.Minute, "the dashboard", `vedutaos: dashboard: 1 game`, 1)
+	log := c.log()
+	for _, want := range []string{`vedutaos: modules: \d+ loaded, 0 failed`, `vedutaos: card /dev/\S+ \(VEDUTA\) on /boot/firmware`, `vedutaos: settings from the card: VEDUTA_SCALE=4`, `vedutaos: framebuffers: fb0 virtio_gpudrmfb`} {
+		if !regexp.MustCompile(want).MatchString(log) {
+			t.Errorf("the serial log lacks %s", want)
+		}
 	}
 
 	// The dashboard lists the game.
@@ -127,9 +122,9 @@ func TestConsole(t *testing.T) {
 	list := c.screen()
 	c.golden("list", list)
 
-	// A starts it; the game draws something else. A key is pressed again while waiting: the
-	// emulated keyboard drops one now and then.
-	c.press("spc", 2*time.Minute, "the game to start", func() bool { r, err := c.running(); return err == nil && r })
+	// A starts it; the game draws something else. The key is pressed again while waiting:
+	// the emulated keyboard drops one now and then.
+	c.press("spc", 2*time.Minute, "the game to start", `vedutaos: game \S+ started`, 1)
 	time.Sleep(5 * time.Second)
 	if game := c.screen(); same(game, list) {
 		c.save("game.got", game)
@@ -137,21 +132,31 @@ func TestConsole(t *testing.T) {
 	}
 
 	// Home ends it; the dashboard is back as it was.
-	c.press("ctrl-q", 2*time.Minute, "the game to end", func() bool { r, err := c.running(); return err == nil && !r })
+	c.press("ctrl-q", 2*time.Minute, "the game to end", `vedutaos: game \S+ ended`, 1)
+	c.waitLog(time.Minute, "the dashboard again", `vedutaos: dashboard: 1 game`, 2)
 	time.Sleep(3 * time.Second)
 	c.golden("list", c.screen())
-	if out, err := c.output("systemctl is-active vedutaos"); err != nil || out != "active\n" {
-		t.Errorf("the dashboard is not running after the game: %q %v", out, err)
+
+	// Leaving the dashboard switches the console off, and the machine with it.
+	c.press("esc", 2*time.Minute, "the console to switch off", `vedutaos: power off`, 1)
+	select {
+	case <-c.done:
+		if c.exit != nil {
+			t.Errorf("QEMU did not end cleanly: %v", c.exit)
+		}
+	case <-time.After(2 * time.Minute):
+		t.Error("QEMU is still running two minutes after the console switched off")
 	}
 }
 
-// press presses a key, and again every fifteen seconds, until ok.
-func (c *console) press(key string, d time.Duration, what string, ok func() bool) {
+// press presses a key, and again every fifteen seconds, until the log has the line.
+func (c *console) press(key string, d time.Duration, what, line string, count int) {
 	c.t.Helper()
+	re := regexp.MustCompile("(?m)" + line)
 	last := time.Now()
 	c.key(key)
 	c.waitFor(d, what, func() bool {
-		if ok() {
+		if len(re.FindAllString(c.log(), -1)) >= count {
 			return true
 		}
 		if time.Since(last) > 15*time.Second {
@@ -162,6 +167,18 @@ func (c *console) press(key string, d time.Duration, what string, ok func() bool
 	})
 }
 
+// waitLog waits until the serial log has had the line count times.
+func (c *console) waitLog(d time.Duration, what, line string, count int) {
+	c.t.Helper()
+	re := regexp.MustCompile("(?m)" + line)
+	c.waitFor(d, what, func() bool { return len(re.FindAllString(c.log(), -1)) >= count })
+}
+
+func (c *console) log() string {
+	b, _ := os.ReadFile(c.logPath)
+	return string(b)
+}
+
 func (c *console) waitFor(d time.Duration, what string, ok func() bool) {
 	c.t.Helper()
 	deadline := time.Now().Add(d)
@@ -169,41 +186,16 @@ func (c *console) waitFor(d time.Duration, what string, ok func() bool) {
 		if time.Now().After(deadline) {
 			c.t.Fatalf("waited %v for %s", d, what)
 		}
-		if c.qemu.ProcessState != nil {
-			c.t.Fatalf("QEMU exited while waiting for %s", what)
+		select {
+		case <-c.done:
+			// The machine may have ended on the very line waited for: switching off.
+			if ok() {
+				return
+			}
+			c.t.Fatalf("QEMU exited (%v) while waiting for %s", c.exit, what)
+		case <-time.After(2 * time.Second):
 		}
-		time.Sleep(5 * time.Second)
 	}
-}
-
-func (c *console) run(cmd string) error {
-	_, err := c.output(cmd)
-	return err
-}
-
-// output runs a command on the console over ssh. A connection that fails (exit 255) is
-// tried again: the emulated machine drops one now and then.
-func (c *console) output(cmd string) (string, error) {
-	var out []byte
-	var err error
-	for attempt := 0; attempt < 3; attempt++ {
-		out, err = exec.Command(c.ssh[0], append(c.ssh[1:], cmd)...).Output()
-		var exit *exec.ExitError
-		if err == nil || !errors.As(err, &exit) || exit.ExitCode() != 255 {
-			break
-		}
-		time.Sleep(2 * time.Second)
-	}
-	return string(out), err
-}
-
-// running reports whether the game is running on the console; it waits for ssh to answer.
-func (c *console) running() (bool, error) {
-	out, err := c.output("pgrep -x demo >/dev/null; echo $?")
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out) == "0", nil
 }
 
 // key presses a key on the emulated keyboard, in QEMU's monitor spelling.
@@ -333,15 +325,6 @@ func same(a, b image.Image) bool {
 		}
 	}
 	return true
-}
-
-func freePort(t *testing.T) int {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
 }
 
 func tail(b []byte, n int) []byte {

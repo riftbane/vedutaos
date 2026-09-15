@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/riftbane/vedutaos/card"
 )
 
 // flashCommand writes the image onto a card. Linux and macOS write the device
@@ -40,9 +42,11 @@ func flashCommand(args []string, stdout, stderr io.Writer) int {
 	}
 	src := *img
 	if src == "" {
-		if src, err = fetchRelease(version, stdout); err != nil {
+		dir, err := fetchRelease(version, []string{imageArchive}, stdout)
+		if err != nil {
 			return fail(err)
 		}
+		src = filepath.Join(dir, imageArchive)
 	}
 	if !fileOK(src) {
 		return fail(fmt.Errorf("%s is missing", src))
@@ -59,7 +63,7 @@ func flashCommand(args []string, stdout, stderr io.Writer) int {
 	if err := writeImage(src, dev, stdout); err != nil {
 		return fail(err)
 	}
-	fmt.Fprintf(stdout, "\nDone. Put the card in a Raspberry Pi: the dashboard appears on the panel. Games go onto\nthe card's boot partition with \"vedutaos card <its folder> --game …\".\n")
+	fmt.Fprintf(stdout, "\nDone. Put the card in a Raspberry Pi: the dashboard appears on the panel. Games go onto\nthe card, which a PC sees as a drive named %s, with \"vedutaos card <its folder> --game …\".\n", card.BootLabel)
 	return 0
 }
 

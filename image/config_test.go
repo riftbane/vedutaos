@@ -2,27 +2,16 @@ package image
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 )
-
-func stock(t *testing.T, name string) []byte {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", "stock", name))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
 
 func wired() *Wiring { return &Wiring{Pins: DefaultPins, Speed: DefaultSPISpeed} }
 
 func TestConfigTxtChangesOnlyItsBlock(t *testing.T) {
-	orig := stock(t, "config.txt")
-	once := ConfigTxt(orig, wired())
-	if !bytes.HasPrefix(once, orig) {
-		t.Fatal("the rest of config.txt was not kept as it was")
+	once := ConfigTxt(nil, wired())
+	if !bytes.HasPrefix(once, []byte(stockConfig)) {
+		t.Fatal("the image's own config.txt was not kept as it is")
 	}
 	if twice := ConfigTxt(once, wired()); !bytes.Equal(twice, once) {
 		t.Fatalf("second run changed the file:\n%s", twice)
@@ -35,8 +24,13 @@ func TestConfigTxtChangesOnlyItsBlock(t *testing.T) {
 	if !bytes.Contains(changed, []byte("dtparam=dc-gpio=22\n")) {
 		t.Fatalf("unconnected lines should be left out:\n%s", changed)
 	}
-	if back := ConfigTxt(changed, nil); !bytes.Equal(back, orig) {
+	if back := ConfigTxt(changed, nil); string(back) != stockConfig {
 		t.Fatalf("taking the panel away did not give back the stock file:\n%s", back)
+	}
+	for _, want := range []string{"auto_initramfs=1", "arm_64bit=1", "dtoverlay=mipi-dbi-spi,spi0-0,speed=32000000,write-only", "dtparam=reset-gpio=25,dc-gpio=24,backlight-gpio=18"} {
+		if !bytes.Contains(once, []byte(want)) {
+			t.Errorf("config.txt lacks %q", want)
+		}
 	}
 }
 
@@ -47,25 +41,21 @@ func TestConfigTxtWithoutTrailingNewline(t *testing.T) {
 	}
 }
 
-func TestCmdline(t *testing.T) {
-	orig := stock(t, "cmdline.txt")
-	once, err := Cmdline(orig)
-	if err != nil {
-		t.Fatal(err)
+func TestCmdlineTxt(t *testing.T) {
+	got := string(CmdlineTxt())
+	if strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("cmdline.txt must be one line: %q", got)
 	}
-	if twice, _ := Cmdline(once); !bytes.Equal(twice, once) {
-		t.Fatalf("not idempotent: %q then %q", once, twice)
+	// The serial port is named last, so /dev/console is the serial port.
+	if !strings.HasPrefix(got, "console=tty1 console=serial0,115200 ") {
+		t.Errorf("consoles: %q", got)
 	}
-	if !bytes.HasPrefix(once, bytes.TrimRight(orig, "\n")) {
-		t.Fatalf("existing settings moved or lost: %q", once)
-	}
-	got, _ := Cmdline([]byte("console=tty1 consoleblank=600 root=/dev/mmcblk0p2\r\n"))
-	if string(got) != "console=tty1 root=/dev/mmcblk0p2 vt.global_cursor_default=0 consoleblank=0\n" {
-		t.Fatalf("%q", got)
-	}
-	for _, bad := range []string{"", "\n", "console=tty1\nroot=/dev/sda2\n"} {
-		if _, err := Cmdline([]byte(bad)); err == nil {
-			t.Errorf("%q accepted", bad)
+	for _, s := range CmdlineSettings {
+		if !strings.Contains(got, " "+s) {
+			t.Errorf("%q lacks %s", got, s)
 		}
+	}
+	if strings.Contains(got, "root=") {
+		t.Errorf("there is no root file system: %q", got)
 	}
 }

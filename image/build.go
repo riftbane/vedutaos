@@ -1,63 +1,45 @@
-// Package image builds the VedutaOS image: Raspberry Pi OS Lite (64-bit) with the console
-// installed, which boots on a Raspberry Pi and, with the Debian kernel it also carries, on
-// QEMU's virt machine. One image, tested where it is deployed.
+// Package image builds the VedutaOS image: one FAT32 volume holding the Raspberry Pi boot
+// firmware, the Pi kernels, an initramfs for each with the console in it, and the games.
+// There is no root file system and no distribution: the initramfs is the system, and the
+// dashboard is its init. The same console, in an initramfs for Debian's arm64 kernel,
+// boots on QEMU's virt machine, which is how it is tested.
 //
-// Building needs Linux, root, and the tools an Ubuntu or Debian machine has: xz, sfdisk,
-// losetup, e2fsck, resize2fs, mount and chroot, plus qemu-user-static registered in binfmt
-// so the image's own arm64 programs run in the chroot. It runs on a GitHub Actions runner.
+// Everything comes from five pinned Debian packages (packages.go), unpacked without
+// installing anything. Building needs xz and mtools, no root and no emulator, and runs on
+// any Linux or macOS machine, or a GitHub Actions runner.
 package image
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"embed"
-	"encoding/hex"
+	"compress/gzip"
+	"debug/elf"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
-	"io/fs"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/riftbane/vedutaos/card"
+	"github.com/riftbane/vedutaos/initramfs"
 	"github.com/riftbane/vedutaos/panel"
 )
 
-// Base is the Raspberry Pi OS Lite (64-bit) release the image is built from, pinned so
-// that a build is reproducible until the pin moves.
-type Base struct {
-	URL    string // the .img.xz
-	SHA256 string // of the .img.xz, as Raspberry Pi publishes it
-}
-
-// Stock is the current base.
-var Stock = Base{
-	URL:    "https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-09-15/2026-09-15-raspios-trixie-arm64-lite.img.xz",
-	SHA256: "cdf4f3bfac35ae947b46e4e767f935453810549779ac3290e05a6754aee627e5",
-}
-
-// Overlay is copied into the image's root as it is: units, the console's scripts, defaults.
-//
-//go:embed rootfs
-var Overlay embed.FS
-
-//go:embed chroot.sh
-var chrootScript []byte
-
 // Options say what to build.
 type Options struct {
-	Base    Base
-	VShell  string // the dashboard, built for linux/arm64
-	Version string // written to /etc/vedutaos-release
-	Out     string // directory for vedutaos.img, vmlinuz and initrd.img
-	Cache   string // directory keeping the downloaded base; Out when empty
-	Grow    int64  // bytes added to the root partition; 1 GiB when zero
-	Panel   panel.Options
-	Wiring  Wiring // DefaultPins and DefaultSPISpeed when zero
-	Verbose io.Writer
+	Packages Packages // Stock when zero
+	VShell   string   // the console: dashboard and init in one program, built for linux/arm64
+	Version  string   // written to Release in the initramfs and vedutaos/release on the card
+	Out      string   // directory for vedutaos.img, vmlinuz and initrd.img
+	Cache    string   // directory keeping the packages; Out when empty
+	Size     int64    // the image's size in bytes; DefaultSize when zero
+	Panel    panel.Options
+	Wiring   Wiring // DefaultPins and DefaultSPISpeed when zero
+	Fetch    Getter // how packages are downloaded; HTTP when nil
+	Verbose  io.Writer
 }
 
 // Result names what Build wrote.
@@ -65,30 +47,44 @@ type Result struct {
 	Image, Kernel, Initrd string
 }
 
-// Paths inside the image, for the tests and the tool.
+// What Build writes.
 const (
-	ImageName  = "vedutaos.img"
-	KernelName = "vmlinuz"
-	InitrdName = "initrd.img"
-	Release    = "/etc/vedutaos-release"
-	rootMount  = "/boot/firmware"
+	ImageName   = "vedutaos.img"
+	KernelName  = "vmlinuz"    // Debian's arm64 kernel, for QEMU
+	InitrdName  = "initrd.img" // its initramfs
+	DefaultSize = 2 << 30
 )
+
+// Modules each kernel gets, by name. What a kernel builds in is left out on its own.
+var (
+	// commonModules are what every console needs: the card's file system, a USB pad or
+	// keyboard as event devices.
+	commonModules = []string{"vfat", "nls_cp437", "nls_ascii", "xhci-pci", "usbhid", "hid-generic", "evdev"}
+	// piModules drive the panel: SPI on the boards up to the Pi 4 and on the Pi 5, the
+	// MIPI DBI panel driver, and a backlight on a GPIO or PWM line.
+	piModules = []string{"spi-bcm2835", "spi-dw-mmio", "panel-mipi-dbi", "gpio_backlight", "pwm_bl"}
+	// virtModules are QEMU's disk and screen.
+	virtModules = []string{"virtio_blk", "virtio-gpu"}
+)
+
+// piKernels are the Pi kernels and the names the boot firmware looks for.
+var piKernels = []struct {
+	pick              func(Packages) Package
+	kernel, initramfs string
+}{
+	{func(p Packages) Package { return p.KernelV8 }, "kernel8.img", "initramfs8"},
+	{func(p Packages) Package { return p.Kernel2712 }, "kernel_2712.img", "initramfs_2712"},
+}
 
 // Check reports why this machine cannot build an image, or nil.
 func Check() error {
-	if runtime.GOOS != "linux" {
-		return errors.New("vedutaos image: builds on Linux only (a GitHub Actions runner does)")
+	if runtime.GOOS == "windows" {
+		return errors.New("vedutaos image: builds on Linux or macOS (a GitHub Actions runner does)")
 	}
-	if os.Geteuid() != 0 {
-		return errors.New("vedutaos image: needs root, for losetup, mount and chroot")
-	}
-	for _, t := range []string{"xz", "sfdisk", "losetup", "e2fsck", "resize2fs", "mount", "umount", "chroot"} {
+	for _, t := range []string{"xz", "mformat", "mcopy"} {
 		if _, err := exec.LookPath(t); err != nil {
-			return fmt.Errorf("vedutaos image: %s is not installed", t)
+			return fmt.Errorf("vedutaos image: %s is not installed (xz-utils, mtools)", t)
 		}
-	}
-	if _, err := os.Stat("/proc/sys/fs/binfmt_misc/qemu-aarch64"); err != nil {
-		return errors.New("vedutaos image: arm64 programs cannot run here: install qemu-user-static (binfmt-support)")
 	}
 	return nil
 }
@@ -99,14 +95,14 @@ func Build(o Options) (Result, error) {
 	if err := Check(); err != nil {
 		return r, err
 	}
-	if o.Base.URL == "" {
-		o.Base = Stock
+	if o.Packages.Firmware.Name == "" {
+		o.Packages = Stock
 	}
 	if o.Cache == "" {
 		o.Cache = o.Out
 	}
-	if o.Grow == 0 {
-		o.Grow = 1 << 30
+	if o.Size == 0 {
+		o.Size = DefaultSize
 	}
 	if o.Wiring.Speed == 0 {
 		o.Wiring.Speed = DefaultSPISpeed
@@ -114,350 +110,288 @@ func Build(o Options) (Result, error) {
 	if o.Wiring.Pins == (Pins{}) {
 		o.Wiring.Pins = DefaultPins
 	}
+	if o.Fetch == nil {
+		o.Fetch = httpGet
+	}
 	if o.Verbose == nil {
 		o.Verbose = io.Discard
 	}
 	if o.VShell == "" || o.Version == "" || o.Out == "" {
 		return r, errors.New("image: VShell, Version and Out are required")
 	}
-	if err := os.MkdirAll(o.Out, 0o755); err != nil {
-		return r, err
+	if o.Size%sectorSize != 0 || o.Size < 64<<20 {
+		return r, errors.New("image: Size must be a multiple of 512 bytes and at least 64 MiB")
 	}
-	if err := os.MkdirAll(o.Cache, 0o755); err != nil {
-		return r, err
+	for _, d := range []string{o.Out, o.Cache} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return r, err
+		}
 	}
-
-	xzPath := filepath.Join(o.Cache, filepath.Base(o.Base.URL))
-	if err := fetch(o.Base, xzPath, o.Verbose); err != nil {
-		return r, err
-	}
-	r.Image = filepath.Join(o.Out, ImageName)
-	r.Kernel = filepath.Join(o.Out, KernelName)
-	r.Initrd = filepath.Join(o.Out, InitrdName)
-
-	fmt.Fprintf(o.Verbose, "unpacking %s\n", xzPath)
-	if err := unxz(xzPath, r.Image); err != nil {
-		return r, err
-	}
-	if err := grow(r.Image, o.Grow); err != nil {
-		return r, err
-	}
-
-	m, err := attach(r.Image)
+	vshell, err := os.ReadFile(o.VShell)
 	if err != nil {
 		return r, err
 	}
-	defer m.detach()
-	fmt.Fprintf(o.Verbose, "image on %s, root at %s\n", m.loop, m.root)
+	if err := checkARM64(vshell); err != nil {
+		return r, fmt.Errorf("%s: %w", o.VShell, err)
+	}
+	fw, err := panelFirmware(o.Panel)
+	if err != nil {
+		return r, err
+	}
 
-	if err := install(m.root, o); err != nil {
+	// The packages, fetched and unpacked once into the cache.
+	roots := map[string]string{}
+	for _, p := range o.Packages.all() {
+		deb, err := fetchPackage(p, filepath.Join(o.Cache, "debs"), o.Fetch, o.Verbose)
+		if err != nil {
+			return r, err
+		}
+		root := filepath.Join(o.Cache, "pkg", p.Name)
+		fmt.Fprintf(o.Verbose, "%s: unpacking\n", p.Name)
+		if err := unpackDeb(deb, root); err != nil {
+			return r, err
+		}
+		roots[p.Name] = root
+	}
+	busybox, err := os.ReadFile(filepath.Join(roots[o.Packages.Busybox.Name], "usr", "bin", "busybox"))
+	if err != nil {
 		return r, err
 	}
-	// The kernel QEMU boots is the Debian one, the only -arm64 flavour in the image.
-	kernels, _ := filepath.Glob(filepath.Join(m.root, "boot", "vmlinuz-*-arm64"))
-	if len(kernels) != 1 {
-		return r, fmt.Errorf("image: want one Debian kernel in /boot, found %d", len(kernels))
-	}
-	kver := strings.TrimPrefix(filepath.Base(kernels[0]), "vmlinuz-")
-	if err := copyOut(kernels[0], r.Kernel, 0o644); err != nil {
+	in := initramfsInput{vshell: vshell, busybox: busybox, firmware: fw, version: o.Version}
+
+	stage, err := os.MkdirTemp("", "vedutaos-card-")
+	if err != nil {
 		return r, err
 	}
-	if err := copyOut(filepath.Join(m.root, "boot", "initrd.img-"+kver), r.Initrd, 0o644); err != nil {
+	defer os.RemoveAll(stage)
+
+	// The boot firmware, for the boards whose boot ROM needs it (the Pi 5 has its own).
+	if err := copyGlob(filepath.Join(roots[o.Packages.Firmware.Name], "usr", "lib", "raspi-firmware", "*"), stage); err != nil {
 		return r, err
 	}
-	if err := m.detach(); err != nil {
+	var releases []string
+	for _, k := range piKernels {
+		p := k.pick(o.Packages)
+		root := roots[p.Name]
+		mods, err := loadModules(root)
+		if err != nil {
+			return r, err
+		}
+		releases = append(releases, mods.release)
+		fmt.Fprintf(o.Verbose, "%s: %s and its initramfs\n", p.Name, k.kernel)
+		if err := copyFile(filepath.Join(root, "boot", "vmlinuz-"+mods.release), filepath.Join(stage, k.kernel)); err != nil {
+			return r, err
+		}
+		// Every kernel package carries the device trees of every board; the later one wins,
+		// as when both are installed.
+		if err := copyGlob(filepath.Join(mods.dir, "dtb", "broadcom", "bcm27*.dtb"), stage); err != nil {
+			return r, err
+		}
+		if err := copyGlob(filepath.Join(mods.dir, "dtb", "overlays", "*"), filepath.Join(stage, "overlays")); err != nil {
+			return r, err
+		}
+		if err := writeInitramfs(filepath.Join(stage, k.initramfs), mods, append(append([]string{}, commonModules...), piModules...), in); err != nil {
+			return r, fmt.Errorf("%s: %w", p.Name, err)
+		}
+	}
+
+	// Debian's kernel, beside the image rather than in it: QEMU boots it directly.
+	virt := roots[o.Packages.KernelVirt.Name]
+	mods, err := loadModules(virt)
+	if err != nil {
+		return r, err
+	}
+	fmt.Fprintf(o.Verbose, "%s: %s and %s for QEMU\n", o.Packages.KernelVirt.Name, KernelName, InitrdName)
+	r.Kernel = filepath.Join(o.Out, KernelName)
+	r.Initrd = filepath.Join(o.Out, InitrdName)
+	if err := copyFile(filepath.Join(virt, "boot", "vmlinuz-"+mods.release), r.Kernel); err != nil {
+		return r, err
+	}
+	if err := writeInitramfs(r.Initrd, mods, append(append([]string{}, commonModules...), virtModules...), in); err != nil {
+		return r, fmt.Errorf("%s: %w", o.Packages.KernelVirt.Name, err)
+	}
+
+	// The card's own files.
+	if err := os.WriteFile(filepath.Join(stage, "config.txt"), ConfigTxt(nil, &o.Wiring), 0o644); err != nil {
+		return r, err
+	}
+	if err := os.WriteFile(filepath.Join(stage, "cmdline.txt"), CmdlineTxt(), 0o644); err != nil {
+		return r, err
+	}
+	if err := os.MkdirAll(filepath.Join(stage, card.Games), 0o755); err != nil {
+		return r, err
+	}
+	if err := os.MkdirAll(filepath.Join(stage, card.Dir), 0o755); err != nil {
+		return r, err
+	}
+	release := fmt.Sprintf("VedutaOS %s\nkernels %s, %s\nQEMU kernel %s\n", o.Version, releases[0], releases[1], mods.release)
+	if err := os.WriteFile(filepath.Join(stage, filepath.FromSlash(card.ReleaseFile)), []byte(release), 0o644); err != nil {
+		return r, err
+	}
+
+	// The image: sparse, so an empty 2 GB costs nothing on disk and nothing in the .xz.
+	r.Image = filepath.Join(o.Out, ImageName)
+	tmp := r.Image + ".part"
+	fmt.Fprintf(o.Verbose, "writing %s (%d MiB, FAT32 %s)\n", r.Image, o.Size>>20, card.BootLabel)
+	if err := writeImage(tmp, o.Size, stage, o.Version); err != nil {
+		os.Remove(tmp)
+		return r, err
+	}
+	if err := os.Rename(tmp, r.Image); err != nil {
 		return r, err
 	}
 	return r, nil
 }
 
-// fetch downloads b to dst unless dst already matches; nothing is left unless it does.
-func fetch(b Base, dst string, out io.Writer) error {
-	if sum, err := fileSum(dst); err == nil && sum == b.SHA256 {
-		fmt.Fprintf(out, "base image cached: %s\n", dst)
-		return nil
-	}
-	fmt.Fprintf(out, "downloading %s\n", b.URL)
-	resp, err := http.Get(b.URL)
-	if err != nil {
-		return fmt.Errorf("download: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: %s", b.URL, resp.Status)
-	}
-	tmp := dst + ".part"
-	f, err := os.Create(tmp)
+// writeImage makes the image file: the partition table, the formatted volume, the files.
+func writeImage(path string, size int64, stage, version string) error {
+	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	h := sha256.New()
-	_, err = io.Copy(io.MultiWriter(f, h), resp.Body)
-	f.Close()
-	if err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("download: %w", err)
+	if err := f.Truncate(size); err != nil {
+		f.Close()
+		return err
 	}
-	if got := hex.EncodeToString(h.Sum(nil)); got != b.SHA256 {
-		os.Remove(tmp)
-		return fmt.Errorf("download %s: sha256 %s, want %s", filepath.Base(dst), got, b.SHA256)
+	h := fnv.New32a()
+	h.Write([]byte(version))
+	sectors := uint32(size / sectorSize)
+	if _, err := f.WriteAt(mbr(sectors, h.Sum32()), 0); err != nil {
+		f.Close()
+		return err
 	}
-	return os.Rename(tmp, dst)
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := formatFAT(path, sectors, card.BootLabel); err != nil {
+		return err
+	}
+	return copyToFAT(path, stage)
 }
 
-func fileSum(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+// initramfsInput is what every initramfs holds besides its kernel's modules.
+type initramfsInput struct {
+	vshell, busybox, firmware []byte
+	version                   string
 }
 
-func unxz(src, dst string) error {
-	f, err := os.Create(dst)
+// writeInitramfs writes a gzip-compressed cpio holding the console for one kernel: init
+// (the dashboard), busybox, the panel's firmware, the modules named with everything they
+// need, and the order to load them in.
+func writeInitramfs(path string, mods *modules, names []string, in initramfsInput) error {
+	order, err := mods.resolve(names)
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	cmd := exec.Command("xz", "-dc", "-T0", src)
-	cmd.Stdout = f
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// grow adds n bytes to the image and to its second, root, partition (the file system is
-// grown once the image is attached).
-func grow(img string, n int64) error {
-	st, err := os.Stat(img)
-	if err != nil {
-		return err
-	}
-	if err := os.Truncate(img, st.Size()+n); err != nil {
-		return err
-	}
-	return run("", strings.NewReader(", +\n"), "sfdisk", "-q", "-N", "2", img)
-}
-
-// mounted is an attached image: its loop device and the mounted root.
-type mounted struct {
-	loop, root string
-	undo       []func() error
-}
-
-func attach(img string) (*mounted, error) {
-	out, err := exec.Command("losetup", "-fP", "--show", img).Output()
-	if err != nil {
-		return nil, fmt.Errorf("losetup: %w", err)
-	}
-	m := &mounted{loop: strings.TrimSpace(string(out))}
-	m.undo = append(m.undo, func() error { return run("", nil, "losetup", "-d", m.loop) })
-	fail := func(err error) (*mounted, error) { m.detach(); return nil, err }
-	root, boot := m.loop+"p2", m.loop+"p1"
-	// e2fsck -p exits 1 when it fixed something, which is fine after a resize.
-	if err := run("", nil, "e2fsck", "-fp", root); err != nil {
-		var ee *exec.ExitError
-		if !errors.As(err, &ee) || ee.ExitCode() > 1 {
-			return fail(err)
+	gz := gzip.NewWriter(f)
+	c := newCpio(gz)
+	dirs := map[string]bool{}
+	dir := func(d string) {
+		d = strings.TrimPrefix(d, "/")
+		if d == "" || dirs[d] {
+			return
 		}
+		dirs[d] = true
+		c.dir(d)
 	}
-	if err := run("", nil, "resize2fs", root); err != nil {
-		return fail(err)
+	for _, d := range []string{"bin", "dev", "etc", "lib", initramfs.Firmware, "lib/modules", "lib/modules/" + mods.release, "proc", "sys", "tmp", "boot", initramfs.CardMount, initramfs.CardMount + "/" + card.Games} {
+		dir(d)
 	}
-	dir, err := os.MkdirTemp("", "vedutaos-root-")
-	if err != nil {
-		return fail(err)
-	}
-	m.root = dir
-	m.undo = append(m.undo, func() error { return os.Remove(dir) })
-	for _, mnt := range []struct {
-		src, dst string
-		opts     []string
-	}{
-		{root, dir, nil},
-		{boot, filepath.Join(dir, rootMount), nil},
-		{"proc", filepath.Join(dir, "proc"), []string{"-t", "proc"}},
-		{"/sys", filepath.Join(dir, "sys"), []string{"--rbind", "--make-rslave"}},
-		{"/dev", filepath.Join(dir, "dev"), []string{"--rbind", "--make-rslave"}},
-	} {
-		args := append(append([]string{}, mnt.opts...), mnt.src, mnt.dst)
-		if err := run("", nil, "mount", args...); err != nil {
-			return fail(err)
+	c.file(initramfs.Init, 0o755, in.vshell)
+	c.file(initramfs.Busybox, 0o755, in.busybox)
+	c.file(initramfs.Firmware+"/"+panel.FirmwareName, 0o644, in.firmware)
+	c.file(initramfs.Release, 0o644, []byte(in.version+"\n"))
+	var list strings.Builder
+	for _, name := range order {
+		b, err := mods.read(name)
+		if err != nil {
+			return err
 		}
-		dst := mnt.dst
-		m.undo = append(m.undo, func() error { return run("", nil, "umount", "-R", dst) })
+		p := mods.plainPath(name)
+		var parents []string
+		for d := filepath.Dir(p); d != "/lib/modules/"+mods.release; d = filepath.Dir(d) {
+			parents = append([]string{d}, parents...)
+		}
+		for _, d := range parents {
+			dir(d)
+		}
+		c.file(p, 0o644, b)
+		list.WriteString(p + "\n")
 	}
-	return m, nil
+	c.file(initramfs.ModuleList, 0o644, []byte(list.String()))
+	if err := c.close(); err != nil {
+		return err
+	}
+	if err := gz.Close(); err != nil {
+		return err
+	}
+	return f.Close()
 }
 
-// detach undoes what attach did, in reverse; it is safe to call twice.
-func (m *mounted) detach() error {
-	var first error
-	for i := len(m.undo) - 1; i >= 0; i-- {
-		if err := m.undo[i](); err != nil && first == nil {
-			first = err
-		}
+// panelFirmware is the panel's start-up sequence, as the kernel's driver loads it.
+func panelFirmware(o panel.Options) ([]byte, error) {
+	cmds, err := panel.ILI9341(o)
+	if err != nil {
+		return nil, err
 	}
-	m.undo = nil
-	return first
+	return panel.Encode(cmds)
 }
 
-// install puts the console into the mounted root.
-func install(root string, o Options) error {
-	// The chroot resolves names through the host's resolver while it installs.
-	resolv := filepath.Join(root, "etc", "resolv.conf")
-	saved, _ := os.ReadFile(resolv)
-	host, err := os.ReadFile("/etc/resolv.conf")
+// checkARM64 refuses a console program that the boards could not run.
+func checkARM64(b []byte) error {
+	f, err := elf.NewFile(bytes.NewReader(b))
 	if err != nil {
-		return err
+		return errors.New("not a Linux program")
 	}
-	os.Remove(resolv)
-	if err := os.WriteFile(resolv, host, 0o644); err != nil {
-		return err
+	defer f.Close()
+	if f.Machine != elf.EM_AARCH64 {
+		return fmt.Errorf("built for %s, not arm64", strings.TrimPrefix(f.Machine.String(), "EM_"))
 	}
-	defer func() {
-		os.Remove(resolv)
-		if saved != nil {
-			os.WriteFile(resolv, saved, 0o644)
+	if f.Type != elf.ET_EXEC && f.Type != elf.ET_DYN {
+		return errors.New("not an executable")
+	}
+	for _, p := range f.Progs {
+		if p.Type == elf.PT_INTERP {
+			return errors.New("not statically linked (build it with CGO_ENABLED=0)")
 		}
-	}()
-
-	if err := copyOverlay(root); err != nil {
-		return err
-	}
-	if err := copyOut(o.VShell, filepath.Join(root, "usr", "lib", "vedutaos", "vshell"), 0o755); err != nil {
-		return err
-	}
-	cmds, err := panel.ILI9341(o.Panel)
-	if err != nil {
-		return err
-	}
-	fw, err := panel.Encode(cmds)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(root, "lib", "firmware", panel.FirmwareName), fw, 0o644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(root, Release), []byte(o.Version+"\n"), 0o644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(root, "etc", "hostname"), []byte("vedutaos\n"), 0o644); err != nil {
-		return err
-	}
-	if err := edit(filepath.Join(root, "etc", "hosts"), func(b []byte) ([]byte, error) {
-		return bytes.ReplaceAll(b, []byte("raspberrypi"), []byte("vedutaos")), nil
-	}); err != nil {
-		return err
-	}
-	fwDir := filepath.Join(root, rootMount)
-	if err := edit(filepath.Join(fwDir, "config.txt"), func(b []byte) ([]byte, error) {
-		return ConfigTxt(b, &o.Wiring), nil
-	}); err != nil {
-		return err
-	}
-	if err := edit(filepath.Join(fwDir, "cmdline.txt"), Cmdline); err != nil {
-		return err
-	}
-
-	before, err := firmwareSums(fwDir)
-	if err != nil {
-		return err
-	}
-	script := filepath.Join(root, "tmp", "vedutaos-chroot.sh")
-	if err := os.WriteFile(script, chrootScript, 0o755); err != nil {
-		return err
-	}
-	defer os.Remove(script)
-	if err := run(root, nil, "chroot", root, "/tmp/vedutaos-chroot.sh"); err != nil {
-		return fmt.Errorf("chroot: %w", err)
-	}
-	after, err := firmwareSums(fwDir)
-	if err != nil {
-		return err
-	}
-	if before != after {
-		return errors.New("image: the chroot changed the Pi kernels in " + rootMount)
 	}
 	return nil
 }
 
-// firmwareSums fingerprints the Pi kernels and initramfs on the boot partition.
-func firmwareSums(dir string) (string, error) {
-	var b strings.Builder
-	for _, g := range []string{"kernel*.img", "initramfs*"} {
-		names, _ := filepath.Glob(filepath.Join(dir, g))
-		for _, n := range names {
-			s, err := fileSum(n)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(filepath.Base(n) + " " + s + "\n")
+func copyGlob(pattern, dstDir string) error {
+	names, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+	if len(names) == 0 {
+		return fmt.Errorf("nothing matches %s", pattern)
+	}
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return err
+	}
+	for _, n := range names {
+		if fi, err := os.Stat(n); err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if err := copyFile(n, filepath.Join(dstDir, filepath.Base(n))); err != nil {
+			return err
 		}
 	}
-	return b.String(), nil
+	return nil
 }
 
-func copyOverlay(root string) error {
-	return fs.WalkDir(Overlay, "rootfs", func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel := strings.TrimPrefix(p, "rootfs")
-		if rel == "" {
-			return nil
-		}
-		dst := filepath.Join(root, rel)
-		if d.IsDir() {
-			return os.MkdirAll(dst, 0o755)
-		}
-		data, err := Overlay.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		mode := os.FileMode(0o644)
-		if strings.HasPrefix(rel, "/usr/lib/vedutaos/") {
-			mode = 0o755
-		}
-		os.Remove(dst)
-		return os.WriteFile(dst, data, mode)
-	})
-}
-
-func copyOut(src, dst string, mode os.FileMode) error {
-	data, err := os.ReadFile(src)
+func copyFile(src, dst string) error {
+	b, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, mode)
-}
-
-func edit(path string, f func([]byte) ([]byte, error)) error {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	b, err = f(b)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, b, 0o644)
-}
-
-func run(dir string, stdin io.Reader, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	cmd.Stdin = stdin
-	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
-	}
-	return nil
+	return os.WriteFile(dst, b, 0o644)
 }

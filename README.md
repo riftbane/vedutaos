@@ -5,13 +5,17 @@ Pi behind a 320×240 panel, a gamepad, and a dashboard listing the games present
 card. Games arrive by dragging a folder onto the card from a PC — there is no store, no
 installer and no network.
 
-VedutaOS is an image, `vedutaos.img.xz`: Raspberry Pi OS Lite (64-bit) with the console
-installed. Written to a card it is a Raspberry Pi console; booted on QEMU it is the same
-console on an emulated machine, which is how it is tested. Each release carries the image
-and `vedutaos`, the program that puts games on cards and boots the image on a PC.
+VedutaOS is an image, `vedutaos.img.xz`, and it is bare Linux: one FAT32 volume holding
+the Raspberry Pi firmware, the Pi kernels, and for each kernel an initramfs with the
+console in it — the dashboard, which is also the system's init, a static busybox, the
+panel's firmware and a dozen drivers. No distribution, no root file system, no service
+manager, no users, no network. The card is mounted read-only and the console is immune to
+having its power cut. The same console, in an initramfs for Debian's arm64 kernel, boots on
+QEMU, which is how it is tested. Each release carries the image, that kernel and initramfs,
+and `vedutaos`, the program that puts games on cards and boots the console on a PC.
 
-**Not yet run on a Raspberry Pi.** The image boots and plays end to end on an emulated ARM64
-machine, in this repository's CI, at every change. The panel, the pad and the boards
+**Not yet run on a Raspberry Pi.** The console boots and plays end to end on an emulated
+ARM64 machine, in this repository's CI, at every change. The panel, the pad and the boards
 themselves are still to be proved on hardware.
 
 ## Making a console
@@ -19,11 +23,11 @@ themselves are still to be proved on hardware.
 Download the [latest release](https://github.com/riftbane/vedutaos/releases/latest).
 
 ```sh
-# a Raspberry Pi: write the image, then put a game on the card's boot partition
+# a Raspberry Pi: write the image, then put a game on the card (a drive named VEDUTAOS)
 sudo vedutaos flash /dev/sdX            # Windows: Raspberry Pi Imager, "Use custom"
-vedutaos card /media/me/bootfs --game games/demo
+vedutaos card /media/me/VEDUTAOS --game games/demo
 
-# an emulated machine on this PC: fetches the image once, then boots it
+# an emulated machine on this PC: fetches the kernel and the console once, then boots
 vedutaos qemu --game games/demo
 ```
 
@@ -38,17 +42,20 @@ The steps, the panel's wiring and what to check when something is wrong are in
 
 ## The card
 
-The card is the image's boot partition, which a PC sees as a small FAT drive, or any USB
-stick labelled `VEDUTA`, which the console takes instead when it is plugged in. On it:
+The card is the image's volume, which a PC sees as a FAT drive named `VEDUTAOS`, or any
+USB stick labelled `VEDUTA`, which the console takes instead when it is plugged in. On it:
 
 | Path | What it is |
 |---|---|
 | `games/<name>/` | one folder per game: its program, its assets, a `card.json` |
 | `vedutaos/env` | settings overriding the console's (`VEDUTA_SCALE`, `VEDUTA_FB`, `VEDUTA_PAD`), optional |
-| `vedutaos/authorized_keys` | public keys admitted as the user `veduta` over ssh, optional |
+| `vedutaos/debug` | while present, a shell on the serial port and on tty2, optional |
 | `vedutaos/vshell` | a dashboard replacing the image's while it is there: how a console is updated from a PC |
+| `vedutaos/release` | which image wrote the card |
 
-`vedutaos card <dir>` writes these; a folder dragged into `games` works just as well.
+`vedutaos card <dir>` writes these; a folder dragged into `games` works just as well. The
+image's own files (`config.txt` with the panel's block, the kernels, the firmware) sit
+beside them, as on any Raspberry Pi card.
 
 A game's `card.json`:
 
@@ -77,6 +84,17 @@ it, and such a folder is passed over rather than shown as broken.
 and a card comes from anywhere. Without `exec`, the build for the board's own architecture
 (`game-arm64`) is preferred, then a plain `game`, so one card can serve two boards.
 
+## How the console starts
+
+The Pi firmware loads `kernel8.img` (or `kernel_2712.img` on a Pi 5) and its initramfs
+from the card. The kernel runs `/init`, which is `vshell`: it mounts `/proc`, `/sys` and
+`/dev`, loads the modules in `/lib/modules/order`, waits for a volume labelled `VEDUTA`
+or, failing that, `VEDUTAOS`, mounts it read-only on `/boot/firmware`, applies the card's
+settings, takes the framebuffer away from the text console, and shows the dashboard. It
+reaps the processes that come back to it, opens the shells when the card asks, and
+switches the machine off when the dashboard is left. Every step is one line on the kernel
+log, which is the serial port.
+
 ## Building and testing
 
 Everything here is standard-library Go, built without cgo, and the unit tests need no
@@ -86,13 +104,14 @@ hardware:
 go test ./...
 ```
 
-The image is built on Linux, as root, from the pinned Raspberry Pi OS Lite release
-(`image/build.go`), with `qemu-user-static` registered so the image's own programs run in
-the chroot; a GitHub Actions runner has everything:
+The image is built from five pinned Debian packages (`image/packages.go`: the Raspberry Pi
+firmware and kernels, Debian's arm64 kernel, busybox), downloaded and unpacked without
+installing anything. It needs `xz` and mtools, no root and no emulator, and takes under a
+minute once the packages are cached:
 
 ```sh
-sudo go run ./cmd/vedutaos image      # out/vedutaos.img, and vmlinuz + initrd.img for QEMU
-go run ./cmd/vedutaos qemu --game …   # boots out/vedutaos.img
+go run ./cmd/vedutaos image      # out/vedutaos.img, and vmlinuz + initrd.img for QEMU
+go run ./cmd/vedutaos qemu --game …   # boots out/vmlinuz with out/initrd.img
 VEDUTAOS_E2E=1 go test ./test/e2e     # boots it headless and plays: the test of the image
 ```
 

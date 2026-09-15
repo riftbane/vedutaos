@@ -17,13 +17,13 @@ import (
 )
 
 // cardSettings are the flags that describe what goes onto a card, shared by the card and
-// qemu commands. The console itself is in the image; a card carries games, settings,
-// ssh keys and, to update a console from a PC, a dashboard.
+// qemu commands. The console itself is in the image; a card carries games, settings, a
+// request for shells and, to update a console from a PC, a dashboard.
 type cardSettings struct {
 	games   repeated
 	scale   int
 	fb, pad string
-	sshKeys repeated
+	debug   bool
 	vshell  string
 }
 
@@ -32,7 +32,7 @@ func (s *cardSettings) register(fs *flag.FlagSet) {
 	fs.IntVar(&s.scale, "scale", 0, "VEDUTA_SCALE, `1-8`: how many screen pixels each panel pixel covers (default: the console's, 1; 4 in QEMU)")
 	fs.StringVar(&s.fb, "fb", "", "VEDUTA_FB: the framebuffer to draw on, when the engine's choice is wrong")
 	fs.StringVar(&s.pad, "pad", "", "VEDUTA_PAD: the one input device to read")
-	fs.Var(&s.sshKeys, "ssh-key", "a public key `file` whose keys may log in as veduta over ssh; repeat for more")
+	fs.BoolVar(&s.debug, "debug", false, "ask the console for a shell on its serial port and on tty2 ("+card.DebugFile+")")
 	fs.StringVar(&s.vshell, "vshell", "", "a dashboard `program` for linux/arm64 that replaces the image's while on the card")
 }
 
@@ -68,7 +68,7 @@ func cardCommand(args []string, stdout, stderr io.Writer) int {
 	var s cardSettings
 	s.register(fs)
 	fs.Usage = func() {
-		fmt.Fprint(stderr, "usage: vedutaos card <dir> [flags]\n\n<dir> is the card as this PC sees it: the boot partition of a VedutaOS card (E:\\ on\nWindows), a USB stick labelled "+card.Label+", or a folder for QEMU.\n\n")
+		fmt.Fprint(stderr, "usage: vedutaos card <dir> [flags]\n\n<dir> is the card as this PC sees it: a VedutaOS card (the drive named "+card.BootLabel+", E:\\ on\nWindows), a USB stick labelled "+card.Label+", or a folder for QEMU.\n\n")
 		fs.PrintDefaults()
 	}
 	rest, err := parse(fs, args)
@@ -113,19 +113,8 @@ func makeCard(dir string, s *cardSettings, out io.Writer) error {
 			return err
 		}
 	}
-	if len(s.sshKeys) != 0 {
-		var keys []byte
-		for _, f := range s.sshKeys {
-			b, err := os.ReadFile(f)
-			if err != nil {
-				return err
-			}
-			if len(b) == 0 || !strings.Contains(string(b), " ") {
-				return fmt.Errorf("%s does not hold a public key", f)
-			}
-			keys = append(keys, strings.TrimRight(string(b), "\r\n")+"\n"...)
-		}
-		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(card.KeysFile)), keys, 0o644); err != nil {
+	if s.debug {
+		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(card.DebugFile)), []byte("The console opens a shell on its serial port and on tty2 while this file is here.\n"), 0o644); err != nil {
 			return err
 		}
 	}
@@ -152,7 +141,7 @@ func errOrEmpty(err error) string {
 // describe says what the card now holds, listing the games as the console will list them.
 func describe(out io.Writer, dir string) error {
 	fmt.Fprintf(out, "\nCard in %s\n", dir)
-	for _, f := range []struct{ name, what string }{{card.VShell, "a dashboard replacing the image's"}, {card.EnvFile, "settings"}, {card.KeysFile, "ssh keys"}} {
+	for _, f := range []struct{ name, what string }{{card.VShell, "a dashboard replacing the image's"}, {card.EnvFile, "settings"}, {card.DebugFile, "shells on the serial port and tty2"}, {card.ReleaseFile, "the image that wrote the card"}} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f.name))); err == nil {
 			fmt.Fprintf(out, "  %-24s %s\n", f.name, f.what)
 		}
@@ -215,18 +204,19 @@ func parsePins(s string, pins image.Pins) (image.Pins, error) {
 	return pins, nil
 }
 
-// buildVShell builds the dashboard for the console from the source tree at root.
-var buildVShell = func(root, out string) error {
-	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", out, "./cmd/vshell")
+// buildVShell builds the console program from the source tree at root, stamped with the
+// version.
+var buildVShell = func(root, out, version string) error {
+	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w -X main.version="+version, "-o", out, "./cmd/vshell")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=arm64", "CGO_ENABLED=0")
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	return cmd.Run()
 }
 
-// findVShell finds the dashboard program for the image: the one named, the one shipped
+// findVShell finds the console program for the image: the one named, the one shipped
 // beside this program, or one built from the source tree this program runs in.
-func findVShell(named string, out io.Writer) (string, func(), error) {
+func findVShell(named, version string, out io.Writer) (string, func(), error) {
 	none := func() {}
 	if named != "" {
 		return named, none, nil
@@ -239,7 +229,7 @@ func findVShell(named string, out io.Writer) (string, func(), error) {
 	}
 	root, ok := sourceRoot()
 	if !ok {
-		return "", none, errors.New("no dashboard program for the console: pass --vshell, keep vshell-arm64 beside vedutaos, or run vedutaos from its source folder with Go installed")
+		return "", none, errors.New("no console program: pass --vshell, keep vshell-arm64 beside vedutaos, or run vedutaos from its source folder with Go installed")
 	}
 	tmp, err := os.MkdirTemp("", "vedutaos-vshell-")
 	if err != nil {
@@ -247,8 +237,8 @@ func findVShell(named string, out io.Writer) (string, func(), error) {
 	}
 	cleanup := func() { os.RemoveAll(tmp) }
 	p := filepath.Join(tmp, "vshell")
-	fmt.Fprintf(out, "building the dashboard for linux/arm64 from %s\n", root)
-	if err := buildVShell(root, p); err != nil {
+	fmt.Fprintf(out, "building the console (vshell %s) for linux/arm64 from %s\n", version, root)
+	if err := buildVShell(root, p, version); err != nil {
 		cleanup()
 		return "", none, fmt.Errorf("building vshell: %w", err)
 	}

@@ -181,3 +181,28 @@ func swap[T any](p *T, v T) func() {
 	*p = v
 	return func() { *p = old }
 }
+
+func TestParseEnv(t *testing.T) {
+	got := parseEnv([]byte("# settings\nVEDUTA_SCALE=4\n\nexport VEDUTA_FB = \"fb1\"\nVEDUTA_PAD='Rii'\nbroken line\n=novalue\n"))
+	want := [][2]string{{"VEDUTA_SCALE", "4"}, {"VEDUTA_FB", "fb1"}, {"VEDUTA_PAD", "Rii"}}
+	if len(got) != len(want) {
+		t.Fatalf("%v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%d: %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSameCards(t *testing.T) {
+	a := []card.Card{{Dir: "/g/one", Title: "One", Exec: "/g/one/game"}}
+	b := []card.Card{{Dir: "/g/one", Title: "One", Exec: "/g/one/game"}}
+	if !sameCards(a, b) || sameCards(a, nil) || sameCards(a, append(b, card.Card{})) {
+		t.Error("cards compared wrongly")
+	}
+	b[0].Icon = "/g/one/icon.png"
+	if sameCards(a, b) {
+		t.Error("an icon that appeared was not noticed")
+	}
+}

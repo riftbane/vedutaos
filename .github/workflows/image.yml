@@ -1,15 +1,15 @@
 name: image
 
-# Builds vedutaos.img, boots it on QEMU and drives the console through the dashboard, a
-# game and back. On a tag the image joins the release. Slow (the boot is emulated), so it
-# runs on tags, by hand, and when what goes into the image changes.
+# Builds vedutaos.img from the pinned packages, boots the console on QEMU and drives it
+# through the dashboard, a game and back. On a tag the image joins the release. Slow (the
+# boot is emulated), so it runs on tags, by hand, and when what goes into the image changes.
 on:
   push:
     tags: ["v*"]
     branches: [main]
-    paths: ["image/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml"]
+    paths: ["image/**", "initramfs/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml"]
   pull_request:
-    paths: ["image/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml"]
+    paths: ["image/**", "initramfs/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml"]
   workflow_dispatch:
 
 permissions:
@@ -32,29 +32,20 @@ jobs:
       - name: tools for building and booting the image
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends qemu-user-static binfmt-support qemu-system-arm qemu-utils xz-utils openssh-client
-          test -e /proc/sys/fs/binfmt_misc/qemu-aarch64
-
-      - name: base image
-        id: base
-        run: |
-          sha="$(grep -o 'SHA256: *"[0-9a-f]*"' image/build.go | grep -o '[0-9a-f]\{64\}')"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          sudo apt-get install -y -q --no-install-recommends qemu-system-arm xz-utils mtools
 
       - uses: actions/cache@v4
         with:
-          path: cache
-          key: raspios-${{ steps.base.outputs.sha }}
+          path: cache/debs
+          key: debs-${{ hashFiles('image/packages.go') }}
 
       - name: build the image
         run: |
           set -eu
           version="${GITHUB_REF_NAME}"
           case "${GITHUB_REF}" in refs/tags/*) ;; *) version="dev-${GITHUB_SHA::7}" ;; esac
-          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o out/vshell-arm64 ./cmd/vshell
           go build -o out/vedutaos ./cmd/vedutaos
-          sudo ./out/vedutaos image --out out --cache cache --vshell out/vshell-arm64 --version "$version"
-          sudo chown -R "$(id -u):$(id -g)" out
+          ./out/vedutaos image --out out --cache cache --version "$version"
           ls -la out
 
       - name: boot it and play
@@ -75,6 +66,7 @@ jobs:
           xz -T0 -c out/vedutaos.img > dist/vedutaos.img.xz
           cp out/vmlinuz out/initrd.img dist/
           (cd dist && sha256sum * > image-checksums.txt && cat image-checksums.txt)
+          ls -la dist
 
       - uses: actions/upload-artifact@v4
         with:

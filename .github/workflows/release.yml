@@ -45,10 +45,10 @@ jobs:
           set -eu
           tag="${GITHUB_REF_NAME}"
           mkdir -p build dist
-          # The dashboard runs on the console, which is linux/arm64 on every board; each
-          # archive carries it beside the tool, which puts it on the card. Nobody making a
-          # card needs Go.
-          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o build/vshell-arm64 ./cmd/vshell
+          # The console program runs on the boards, which are linux/arm64 every one; each
+          # archive carries it beside the tool, which puts it on a card as a newer dashboard.
+          # Nobody making a card needs Go.
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=${tag}" -o build/vshell-arm64 ./cmd/vshell
 
           # The engine's demo game, from the engine release this repository builds against,
           # built for the console by the tool itself, so a card can be tried with nothing but

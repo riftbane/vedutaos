@@ -1,13 +1,16 @@
 package card
 
-// The card's layout, as the console reads it (see image/rootfs/usr/lib/vedutaos). A card
-// is the boot partition of a console, or any volume labelled Label plugged into one: a USB
-// stick, or the folder QEMU shows the emulated machine as a disk.
+// The card's layout, as the console reads it (cmd/vshell/init_linux.go). A card is the
+// image's own volume, labelled BootLabel, or any volume labelled Label plugged into the
+// console: a USB stick, or the folder QEMU shows the emulated machine as a disk. A Label
+// volume is taken in preference to the boot volume.
 const (
-	Label    = "VEDUTA"
-	Dir      = "vedutaos"
-	VShell   = Dir + "/vshell"          // replaces the image's dashboard while present
-	EnvFile  = Dir + "/env"             // settings overriding /etc/default/vedutaos
-	KeysFile = Dir + "/authorized_keys" // public keys admitted as the user veduta over ssh
-	Games    = "games"                  // one folder per game
+	Label       = "VEDUTA"
+	BootLabel   = "VEDUTAOS"
+	Dir         = "vedutaos"
+	VShell      = Dir + "/vshell"  // replaces the image's dashboard while present
+	EnvFile     = Dir + "/env"     // settings: VEDUTA_SCALE, VEDUTA_FB, VEDUTA_PAD
+	DebugFile   = Dir + "/debug"   // when present, a shell on the serial port and on tty2
+	ReleaseFile = Dir + "/release" // which image wrote the card
+	Games       = "games"          // one folder per game
 )

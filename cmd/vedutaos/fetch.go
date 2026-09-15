@@ -9,15 +9,14 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/riftbane/vedutaos/image"
 )
 
-// A release carries the image beside the tool archives: vedutaos.img.xz for a card and
-// for QEMU, with the kernel and initramfs QEMU boots and a checksum file over them.
+// A release carries the image beside the tool archives: vedutaos.img.xz for a card, the
+// kernel and initramfs QEMU boots, and a checksum file over them.
 const (
 	releaseBase   = "https://github.com/riftbane/vedutaos/releases/download/"
 	imageArchive  = image.ImageName + ".xz"
@@ -30,7 +29,7 @@ var (
 	httpGet    = http.Get
 )
 
-// imageDir is where a release's image is kept once fetched: <cache>/vedutaos/image/<version>.
+// imageDir is where a release's files are kept once fetched: <cache>/vedutaos/image/<version>.
 func imageDir(version string) (string, error) {
 	cache, err := os.UserCacheDir()
 	if err != nil {
@@ -39,12 +38,12 @@ func imageDir(version string) (string, error) {
 	return filepath.Join(cache, "vedutaos", "image", version), nil
 }
 
-// fetchRelease returns the image of a release, fetching it once: the checksum file first,
-// then each file it names that is missing or does not match, and finally the unpacked
-// image. A tool without a version has no release to fetch from.
-func fetchRelease(version string, out io.Writer) (string, error) {
+// fetchRelease returns the directory holding the files named from this tool's release,
+// fetching each once: the checksum file first, then whatever is missing or does not
+// match. A tool without a version has no release to fetch from.
+func fetchRelease(version string, names []string, out io.Writer) (string, error) {
 	if version == "dev" || version == "" {
-		return "", errors.New("this build of vedutaos has no release to fetch an image from: pass --image, or build one with \"vedutaos image\"")
+		return "", errors.New("this build of vedutaos has no release to fetch from: build the image with \"vedutaos image\", or pass the files")
 	}
 	dir, err := imageDir(version)
 	if err != nil {
@@ -53,8 +52,7 @@ func fetchRelease(version string, out io.Writer) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	img := filepath.Join(dir, image.ImageName)
-	sums, err := download(releaseURL(version, checksumsName), out)
+	sums, err := download(releaseURL(version, checksumsName))
 	if err != nil {
 		return "", fmt.Errorf("release %s: %w", version, err)
 	}
@@ -64,7 +62,7 @@ func fetchRelease(version string, out io.Writer) (string, error) {
 			want[strings.TrimPrefix(f[1], "*")] = f[0]
 		}
 	}
-	for _, name := range []string{imageArchive, image.KernelName, image.InitrdName} {
+	for _, name := range names {
 		sum, ok := want[name]
 		if !ok {
 			return "", fmt.Errorf("release %s: %s does not name %s", version, checksumsName, name)
@@ -77,44 +75,11 @@ func fetchRelease(version string, out io.Writer) (string, error) {
 		if err := downloadTo(releaseURL(version, name), dst, sum, out); err != nil {
 			return "", fmt.Errorf("release %s: %w", version, err)
 		}
-		if name == imageArchive {
-			os.Remove(img)
-		}
 	}
-	if !fileOK(img) {
-		fmt.Fprintf(out, "unpacking %s\n", imageArchive)
-		if err := unxz(filepath.Join(dir, imageArchive), img); err != nil {
-			return "", err
-		}
-	}
-	return img, nil
+	return dir, nil
 }
 
-// unxz unpacks src to dst with the xz program: the standard library has no xz, and every
-// Linux and macOS has the program; on Windows 7-Zip opens the file.
-func unxz(src, dst string) error {
-	xz, err := lookPath("xz")
-	if err != nil {
-		return fmt.Errorf("xz is not installed: unpack %s yourself (7-Zip on Windows) and pass --image %s", src, strings.TrimSuffix(src, ".xz"))
-	}
-	tmp := dst + ".part"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(xz, "-dc", src)
-	cmd.Stdout = f
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	f.Close()
-	if err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("unpacking %s: %w", src, err)
-	}
-	return os.Rename(tmp, dst)
-}
-
-func download(url string, out io.Writer) ([]byte, error) {
+func download(url string) ([]byte, error) {
 	resp, err := httpGet(url)
 	if err != nil {
 		return nil, err

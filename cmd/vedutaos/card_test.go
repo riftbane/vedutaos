@@ -67,22 +67,17 @@ func exists(dir, name string) bool {
 
 func TestCard(t *testing.T) {
 	dir := t.TempDir()
-	key := filepath.Join(t.TempDir(), "id_ed25519.pub")
-	os.WriteFile(key, []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ5f me@pc\n"), 0o644)
 
 	// A card of games alone: the console's own settings and dashboard stay.
-	code, out, errs := runTool(t, "card", dir, "--game", game(t, "gems", elf.EM_AARCH64), "--ssh-key", key)
+	code, out, errs := runTool(t, "card", dir, "--game", game(t, "gems", elf.EM_AARCH64))
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
 	if !exists(dir, "games/gems/game") || !exists(dir, "games/gems/card.json") {
 		t.Error("the game is not on the card")
 	}
-	if exists(dir, "vedutaos/env") || exists(dir, "vedutaos/vshell") {
-		t.Error("settings or a dashboard written without being asked")
-	}
-	if k := read(t, dir, "vedutaos/authorized_keys"); k != "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ5f me@pc\n" {
-		t.Errorf("authorized_keys: %q", k)
+	if exists(dir, "vedutaos/env") || exists(dir, "vedutaos/vshell") || exists(dir, "vedutaos/debug") {
+		t.Error("settings, a dashboard or a debug request written without being asked")
 	}
 	if !strings.Contains(out, "GEMS") || !strings.Contains(out, "games/gems") {
 		t.Errorf("output:\n%s", out)
@@ -90,7 +85,7 @@ func TestCard(t *testing.T) {
 
 	// Written again with settings and a dashboard: the game stays, the rest is added.
 	vshell := fakeProgram(t, filepath.Join(t.TempDir(), "vshell"), elf.EM_AARCH64)
-	if code, out, errs = runTool(t, "card", dir, "--vshell", vshell, "--scale", "2", "--pad", "/dev/input/event3"); code != 0 {
+	if code, out, errs = runTool(t, "card", dir, "--vshell", vshell, "--scale", "2", "--pad", "/dev/input/event3", "--debug"); code != 0 {
 		t.Fatalf("exit %d: %s", code, errs)
 	}
 	if !exists(dir, "games/gems/game") || !exists(dir, "vedutaos/vshell") {
@@ -99,8 +94,8 @@ func TestCard(t *testing.T) {
 	if env := read(t, dir, "vedutaos/env"); !strings.Contains(env, "VEDUTA_SCALE=2\n") || !strings.Contains(env, "VEDUTA_PAD=/dev/input/event3\n") || strings.Contains(env, "VEDUTA_FB") {
 		t.Errorf("env:\n%s", env)
 	}
-	if !strings.Contains(out, "replacing the image's") {
-		t.Errorf("output does not mention the dashboard:\n%s", out)
+	if !strings.Contains(out, "replacing the image's") || !strings.Contains(out, "shells") || !exists(dir, "vedutaos/debug") {
+		t.Errorf("output does not mention the dashboard and the shells:\n%s", out)
 	}
 }
 
@@ -117,29 +112,29 @@ func TestCardRefusesWhatTheConsoleCannotRun(t *testing.T) {
 	if !strings.Contains(out, "built for amd64") {
 		t.Errorf("an amd64 game is listed without a warning:\n%s", out)
 	}
-	if code, _, errs := runTool(t, "card", dir, "--ssh-key", filepath.Join(dir, "missing.pub")); code != 1 {
-		t.Errorf("a missing key file: exit %d, %s", code, errs)
+	if code, _, errs := runTool(t, "card", dir, "--game", filepath.Join(dir, "missing")); code != 1 {
+		t.Errorf("a missing game: exit %d, %s", code, errs)
 	}
 }
 
 func TestDashboardBuiltFromSource(t *testing.T) {
 	saved := buildVShell
 	defer func() { buildVShell = saved }()
-	built := ""
-	buildVShell = func(r, out string) error {
-		built = r
+	built, stamped := "", ""
+	buildVShell = func(r, out, version string) error {
+		built, stamped = r, version
 		fakeProgram(t, out, elf.EM_AARCH64)
 		return nil
 	}
-	p, cleanup, err := findVShell("", os.Stderr)
+	p, cleanup, err := findVShell("", "v1.2.3", os.Stderr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	if root, _ := sourceRoot(); built != root || !exists(filepath.Dir(p), "vshell") {
-		t.Errorf("built from %q, got %q", built, p)
+	if root, _ := sourceRoot(); built != root || stamped != "v1.2.3" || !exists(filepath.Dir(p), "vshell") {
+		t.Errorf("built from %q as %q, got %q", built, stamped, p)
 	}
-	if p, _, _ := findVShell("/x/vshell", os.Stderr); p != "/x/vshell" {
+	if p, _, _ := findVShell("/x/vshell", "v1", os.Stderr); p != "/x/vshell" {
 		t.Errorf("--vshell ignored: %q", p)
 	}
 }

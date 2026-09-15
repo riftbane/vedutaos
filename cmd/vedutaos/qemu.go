@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -26,15 +25,12 @@ const (
 
 // qemuConfig is everything the QEMU command line is made from.
 type qemuConfig struct {
-	Kernel  string   // the image's Debian kernel, extracted beside it by vedutaos image
-	Initrd  string   // its initramfs
-	Root    string   // PARTUUID of the image's root partition
-	Disk    string   // the machine's disk: an overlay on the image
+	Kernel  string   // Debian's arm64 kernel, written beside the image by vedutaos image
+	Initrd  string   // its initramfs: the console
 	Card    string   // the card folder, shown to the machine as a disk labelled card.Label
 	Accel   string   // tcg, kvm or hvf
 	CPUs    int      // virtual processors
 	Memory  string   // guest memory, as QEMU spells it
-	SSHPort int      // host port forwarded to the machine's ssh, on loopback only
 	Display string   // QEMU's display backend, empty for its default
 	Extra   []string // anything after "--"
 }
@@ -51,27 +47,32 @@ func qemuArgs(c qemuConfig) []string {
 	args = append(args,
 		"-smp", strconv.Itoa(c.CPUs),
 		"-m", c.Memory,
-		// The kernel is booted directly: no UEFI, no boot loader in the image to keep.
+		// The kernel is booted directly, and the initramfs is the whole system: there is no
+		// disk image, no boot loader and no root file system.
 		"-kernel", c.Kernel,
 		"-initrd", c.Initrd,
-		"-append", "root=PARTUUID="+c.Root+" rootfstype=ext4 rootwait console=ttyAMA0 "+strings.Join(image.CmdlineSettings, " "),
+		// Kernel messages go to the screen and the serial port; /dev/console, where the
+		// dashboard and the games write, is the serial port, as on the Pi.
+		"-append", "console=tty1 console=ttyAMA0 "+strings.Join(image.CmdlineSettings, " "),
 		// -blockdev rather than -drive file=: a Windows path's drive letter would read as a
 		// protocol there.
-		"-blockdev", "driver=qcow2,node-name=disk,file.driver=file,file.filename="+qemuEscape(c.Disk),
-		"-device", "virtio-blk-pci,drive=disk",
 		"-blockdev", "driver=vvfat,node-name=card,dir="+qemuEscape(c.Card)+",label="+card.Label+",read-only=on",
-		"-device", "virtio-blk-pci,drive=card",
+		// No option ROM: nothing boots from the disk, and not every QEMU installation ships
+		// the ROM file.
+		"-device", "virtio-blk-pci,drive=card,romfile=",
 		"-device", fmt.Sprintf("virtio-gpu-pci,xres=%d,yres=%d", screenW, screenH),
 		"-device", "qemu-xhci",
 		"-device", "usb-kbd",
 		// A tablet reports where the pointer is, which the player reads as the stick: the
 		// middle of the window is rest. It follows the host pointer without grabbing it.
 		"-device", "usb-tablet",
-		"-netdev", fmt.Sprintf("user,id=net0,hostfwd=tcp:127.0.0.1:%d-:22", c.SSHPort),
-		// No option ROM: nothing boots from the network, and not every QEMU installation
-		// ships the ROM file.
-		"-device", "virtio-net-pci,netdev=net0,romfile=",
 		"-serial", "mon:stdio",
+		// No network: the console has none, and QEMU's default card wants an option ROM
+		// that not every installation ships.
+		"-nic", "none",
+		// Switching the console off ends QEMU, and so does a kernel panic (which would
+		// otherwise reboot, as it does on the Pi).
+		"-no-reboot",
 	)
 	if c.Display != "" {
 		args = append(args, "-display", c.Display)
@@ -82,28 +83,6 @@ func qemuArgs(c qemuConfig) []string {
 // qemuEscape doubles the commas QEMU would otherwise read as the end of a value.
 func qemuEscape(s string) string {
 	return strings.ReplaceAll(s, ",", ",,")
-}
-
-// rootPartUUID reads the image's MBR disk identifier, which names its partitions to the
-// kernel as PARTUUID=<id>-<n>; the root file system is the second partition.
-func rootPartUUID(img string) (string, error) {
-	f, err := os.Open(img)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	var mbr [512]byte
-	if _, err := io.ReadFull(f, mbr[:]); err != nil {
-		return "", fmt.Errorf("%s: not a disk image: %w", img, err)
-	}
-	if mbr[510] != 0x55 || mbr[511] != 0xaa {
-		return "", fmt.Errorf("%s: not a disk image (no MBR signature)", img)
-	}
-	id := binary.LittleEndian.Uint32(mbr[0x1b8:])
-	if id == 0 {
-		return "", fmt.Errorf("%s: the disk has no identifier", img)
-	}
-	return fmt.Sprintf("%08x-02", id), nil
 }
 
 func qemuCommand(args []string, stdout, stderr io.Writer) int {
@@ -118,21 +97,18 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	var (
 		s        cardSettings
-		img      = fs.String("image", "", "the VedutaOS `image` to boot (default: this release's, fetched once; in the source tree, out/"+image.ImageName+")")
-		kernel   = fs.String("kernel", "", "the kernel QEMU boots (default: "+image.KernelName+" beside the image)")
-		initrd   = fs.String("initrd", "", "its initramfs (default: "+image.InitrdName+" beside the image)")
+		kernel   = fs.String("kernel", "", "the `kernel` QEMU boots (default: this release's "+image.KernelName+", fetched once; in the source tree, out/"+image.KernelName+")")
+		initrd   = fs.String("initrd", "", "its `initramfs`, which is the console (default: "+image.InitrdName+" beside the kernel)")
 		cardDir  = fs.String("card", "", "the card `folder` (default: in this user's cache directory)")
-		fresh    = fs.Bool("fresh", false, "throw the machine's disk away: the next boot is the image's first")
 		display  = fs.String("display", "", "QEMU's display: sdl, gtk, none… (default: QEMU's own choice)")
 		qemuBin  = fs.String("qemu", "", "the qemu-system-aarch64 `program` (default: found on PATH)")
-		sshPort  = fs.Int("ssh-port", 2222, "host `port` forwarded to the machine's ssh, on 127.0.0.1 only")
 		cpus     = fs.Int("cpus", 4, "virtual processors")
 		memory   = fs.String("memory", "1G", "guest memory")
-		printCmd = fs.Bool("print", false, "make the card and print the QEMU command, without creating the disk or running")
+		printCmd = fs.Bool("print", false, "make the card and print the QEMU command, without running it")
 	)
 	s.register(fs)
 	fs.Usage = func() {
-		fmt.Fprint(stderr, "usage: vedutaos qemu [flags] [-- qemu-args]\n\nBoots the VedutaOS image on QEMU's arm64 machine with a card holding the games named.\nThe image is the one a Raspberry Pi gets; the panel is the only thing QEMU cannot show.\n\n")
+		fmt.Fprint(stderr, "usage: vedutaos qemu [flags] [-- qemu-args]\n\nBoots the console on QEMU's arm64 machine with a card holding the games named. It is the\nsame console a Raspberry Pi runs, on Debian's kernel; the panel is the only thing QEMU cannot show.\n\n")
 		fs.PrintDefaults()
 	}
 	rest, err := parse(fs, args)
@@ -163,30 +139,27 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 	if err := os.MkdirAll(cache, 0o755); err != nil {
 		return fail(err)
 	}
-	if *img == "" {
-		if root, ok := sourceRoot(); ok && fileOK(filepath.Join(root, "out", image.ImageName)) {
-			*img = filepath.Join(root, "out", image.ImageName)
-		} else if *img, err = fetchRelease(version, stdout); err != nil {
-			return fail(err)
+	if *kernel == "" {
+		if root, ok := sourceRoot(); ok && fileOK(filepath.Join(root, "out", image.KernelName)) {
+			*kernel = filepath.Join(root, "out", image.KernelName)
+		} else {
+			dir, err := fetchRelease(version, []string{image.KernelName, image.InitrdName}, stdout)
+			if err != nil {
+				return fail(err)
+			}
+			*kernel = filepath.Join(dir, image.KernelName)
 		}
 	}
-	if *img, err = filepath.Abs(*img); err != nil {
+	if *kernel, err = filepath.Abs(*kernel); err != nil {
 		return fail(err)
 	}
-	if *kernel == "" {
-		*kernel = filepath.Join(filepath.Dir(*img), image.KernelName)
-	}
 	if *initrd == "" {
-		*initrd = filepath.Join(filepath.Dir(*img), image.InitrdName)
+		*initrd = filepath.Join(filepath.Dir(*kernel), image.InitrdName)
 	}
-	for _, f := range []string{*img, *kernel, *initrd} {
+	for _, f := range []string{*kernel, *initrd} {
 		if !fileOK(f) {
 			return fail(fmt.Errorf("%s is missing", f))
 		}
-	}
-	root, err := rootPartUUID(*img)
-	if err != nil {
-		return fail(err)
 	}
 	if *cardDir == "" {
 		*cardDir = filepath.Join(cache, "card")
@@ -206,31 +179,16 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 		return fail(err)
 	}
 
-	disk := filepath.Join(cache, "console.qcow2")
-	if *fresh {
-		if err := os.Remove(disk); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fail(err)
-		}
-	}
-	if !fileOK(disk) && !*printCmd {
-		// An overlay keeps the image as it was built, so --fresh is instant.
-		cmd := exec.Command(qemuImg(qemu), "create", "-q", "-f", "qcow2", "-F", "raw", "-b", *img, disk)
-		cmd.Stdout, cmd.Stderr = stdout, stderr
-		if err := cmd.Run(); err != nil {
-			return fail(fmt.Errorf("creating the machine's disk: %w", err))
-		}
-	}
-
 	cfg := qemuConfig{
-		Kernel: *kernel, Initrd: *initrd, Root: root, Disk: disk, Card: *cardDir, Accel: accelerator(),
-		CPUs: *cpus, Memory: *memory, SSHPort: *sshPort, Display: *display, Extra: extra,
+		Kernel: *kernel, Initrd: *initrd, Card: *cardDir, Accel: accelerator(),
+		CPUs: *cpus, Memory: *memory, Display: *display, Extra: extra,
 	}
 	argv := qemuArgs(cfg)
 	fmt.Fprintf(stdout, "\n%s %s\n", qemu, strings.Join(quoteAll(argv), " "))
 	if *printCmd {
 		return 0
 	}
-	fmt.Fprintf(stdout, "\nIn the window: arrows move, Enter starts a game, the mouse is the stick, Ctrl+Q leaves it.\nHere: Ctrl-A x stops the machine. With a key given by --ssh-key: ssh -p %d veduta@127.0.0.1\n\n", *sshPort)
+	fmt.Fprint(stdout, "\nIn the window: arrows move, Enter starts a game, the mouse is the stick, Ctrl+Q leaves\na game and, on the dashboard, switches the console off.\nHere: the console's serial port. Ctrl-A x stops the machine at once.\n\n")
 	cmd := exec.Command(qemu, argv...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, stderr
 	tieToParent(cmd)
@@ -279,21 +237,6 @@ func findQEMU(named string) (string, error) {
 		}
 	}
 	return "", errors.New("qemu-system-aarch64 not found: install QEMU (on Windows from https://qemu.weilnetz.de/w64/) or pass --qemu")
-}
-
-// qemuImg is the qemu-img that came with a QEMU.
-func qemuImg(qemu string) string {
-	name := "qemu-img"
-	if goos == "windows" {
-		name += ".exe"
-	}
-	if p := filepath.Join(filepath.Dir(qemu), name); fileOK(p) {
-		return p
-	}
-	if p, err := lookPath("qemu-img"); err == nil {
-		return p
-	}
-	return name
 }
 
 // accelerator picks hardware virtualisation when the host is itself arm64 and offers it;

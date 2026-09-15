@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+## v0.3.0 — 2026-09-15
+
+VedutaOS is bare Linux. The image is one FAT32 volume with the Raspberry Pi firmware, the
+Pi kernels and, for each, an initramfs holding the console: the dashboard, which is now the
+system's init, busybox, the panel's firmware and the drivers. No Raspberry Pi OS, no root
+file system, no systemd, udev, ssh, apt or users; the card is read-only, so the power can
+be cut at any time. The image is built from five pinned Debian packages, without root,
+chroot or emulation, in seconds.
+
+### Added
+
+- `vshell` as PID 1 (`cmd/vshell/init_linux.go`): mounts `/proc`, `/sys` and `/dev`, loads
+  the modules the image lists in order, finds the card by reading the label of every block
+  device (a `VEDUTA` volume first, the boot volume `VEDUTAOS` after two seconds), mounts it
+  read-only, applies `vedutaos/env`, takes the framebuffer from the text console, reaps
+  orphans, and switches off when the dashboard is left (`reboot`/`poweroff` by signal too).
+  Every step is a `vedutaos: …` line on the kernel log, which is the serial port.
+- `vedutaos/debug` on the card (`--debug`): a busybox shell on the serial port and on tty2,
+  respawned. The shells also open by themselves when the dashboard fails three times.
+- `image/packages.go` pins the packages (raspi-firmware, linux-image-rpi-v8 and -2712
+  6.18.50, Debian's linux-image-arm64 6.12.107, busybox-static) by URL and sha256; Debian's
+  are also reachable on snapshot.debian.org. Modules are chosen by each kernel's own
+  `.modinfo` (the packages carry no `modules.dep`) and stored uncompressed, since the Pi
+  kernels cannot decompress them.
+- The dashboard rescans the card every two seconds while shown, so a card mounted late
+  appears, and the card's `vedutaos/release` says which image wrote it.
+
+### Changed
+
+- `vedutaos image` needs xz and mtools, not root, and runs on macOS too; `--size` sets the
+  volume's size (2048 MiB). The chroot script, the systemd units and the overlay are gone.
+- `vedutaos qemu` boots `vmlinuz` with `initrd.img` and the card folder, nothing else: no
+  image, no qcow2 overlay, no network, no ssh; `--image`, `--fresh`, `--ssh-key` and
+  `--ssh-port` are gone, `--kernel` and `--initrd` name the pair, `--debug` asks for shells.
+  Without `--kernel` it fetches the release's pair (about 40 MB), so Windows needs neither
+  xz nor 7-Zip for it.
+- `vedutaos card`: `--ssh-key` is gone with ssh; the card is the drive named `VEDUTAOS`.
+- `test/e2e` reads the console's state from the serial log instead of ssh, and ends by
+  switching the console off and seeing QEMU exit.
+- The Pi's `cmdline.txt` names `tty1` then `serial0`, so `/dev/console` (where the
+  dashboard and the games write) is the serial port; `panic=10` reboots after a panic.
+
+### Not yet verified
+
+- On a Raspberry Pi: that the Pi firmware boots the FAT and that the initramfs's modules
+  are the right ones for the panel (`spi-bcm2835`, or the Pi 5's RP1 SPI driver, and
+  `panel-mipi-dbi`), that the built-in USB and MMC drivers find the pad and the card.
+
 ## v0.2.0 — 2026-09-15
 
 VedutaOS is an image. One `vedutaos.img.xz`, Raspberry Pi OS Lite with the console

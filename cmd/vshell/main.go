@@ -1,18 +1,25 @@
-// Command vshell is the console's dashboard: it lists the games on the card, runs the one
-// the player chooses, and comes back when that game ends.
+// Command vshell is the console: the dashboard that lists the games on the card, runs the
+// one the player chooses, and comes back when that game ends.
+//
+// On the console it is also the operating system's first process: as PID 1 it mounts the
+// kernel's file systems, loads the drivers, finds and mounts the card, and only then shows
+// the dashboard (init_linux.go). There is nothing else running. On a desktop, or from a
+// card that carries a newer copy of it, the same program is only the dashboard, in an
+// ordinary window or on the console's panel.
 //
 // There is one panel and one pad, so the dashboard gives them up while a game is running:
-// it closes its window before launching and opens it again afterwards. On a desktop the
-// same program opens an ordinary window, which is how it is developed.
+// it closes its window before launching and opens it again afterwards.
 package main
 
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/riftbane/veduta/gfx"
@@ -21,24 +28,37 @@ import (
 	"github.com/riftbane/veduta/sim"
 	"github.com/riftbane/veduta/sprite"
 	"github.com/riftbane/vedutaos/card"
+	"github.com/riftbane/vedutaos/initramfs"
 	"github.com/riftbane/vedutaos/shell"
 )
+
+// version is set by the image build (-ldflags "-X main.version=v0.3.0").
+var version = "dev"
 
 // The panel refreshes twenty times a second, and so does the dashboard.
 const tickRate = 20
 
+// rescan is how often the dashboard, while shown, reads the card again: a card can be
+// mounted after the dashboard came up, and init keeps the text console off the panel.
+const rescan = 2 * time.Second
+
 // defaultGames is where a card's games are: the partition a PC sees when the card is
 // plugged into it.
-const defaultGames = "/boot/firmware/games"
+const defaultGames = initramfs.CardMount + "/" + card.Games
 
 // Seams: tests drive the whole loop through a window that is not a window and a launcher
-// that runs nothing.
+// that runs nothing; init hooks tick to keep the framebuffer console unbound.
 var (
 	openWindow = platform.Open
 	launch     = runGame
+	tick       = func() {}
 )
 
 func main() {
+	if os.Getpid() == 1 {
+		initMain() // never returns
+	}
+	openStatus()
 	dir := flag.String("games", envOr("VEDUTAOS_GAMES", defaultGames), "directory holding the game folders")
 	flag.Parse()
 	if err := run(*dir); err != nil {
@@ -54,6 +74,52 @@ func envOr(name, def string) string {
 	return def
 }
 
+// status is where the console says what it is doing: the kernel log, which reaches the
+// serial port and dmesg, when it can be written; nowhere on a desktop.
+var status io.Writer = io.Discard
+
+func openStatus() {
+	if f, err := os.OpenFile("/dev/kmsg", os.O_WRONLY, 0); err == nil {
+		status = f
+	}
+}
+
+// say writes one line of status. Each write is one record of the kernel log.
+func say(format string, args ...any) {
+	fmt.Fprintf(status, "<5>vedutaos: "+format+"\n", args...)
+}
+
+// children are the processes this program started and will wait for itself, so that
+// init's reaper leaves them alone.
+var children = struct {
+	sync.Mutex
+	pids map[int]bool
+}{pids: map[int]bool{}}
+
+func startChild(cmd *exec.Cmd) error {
+	children.Lock()
+	defer children.Unlock()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	children.pids[cmd.Process.Pid] = true
+	return nil
+}
+
+func waitChild(cmd *exec.Cmd) error {
+	err := cmd.Wait()
+	children.Lock()
+	delete(children.pids, cmd.Process.Pid)
+	children.Unlock()
+	return err
+}
+
+func isChild(pid int) bool {
+	children.Lock()
+	defer children.Unlock()
+	return children.pids[pid]
+}
+
 // run shows the dashboard until the player leaves it, launching games in between.
 func run(dir string) error {
 	var state shell.State
@@ -65,7 +131,7 @@ func run(dir string) error {
 			return err
 		}
 		state.Cards = cards
-		next, action, err := show(state)
+		next, action, err := show(dir, state)
 		if err != nil {
 			return err
 		}
@@ -86,12 +152,14 @@ func run(dir string) error {
 
 // show runs the dashboard until the player launches a game or leaves, with the window open
 // only for as long as that takes.
-func show(state shell.State) (shell.State, shell.Action, error) {
+func show(dir string, state shell.State) (shell.State, shell.Action, error) {
+	tick()
 	win, err := openWindow(platform.Options{Title: "VedutaOS", Width: 320, Height: 240})
 	if err != nil {
 		return state, shell.Quit, err
 	}
 	defer win.Close()
+	say("dashboard: %s", plural(len(state.Cards), "game"))
 
 	r := soft.New(soft.Options{})
 	defer r.Close()
@@ -103,13 +171,22 @@ func show(state shell.State) (shell.State, shell.Action, error) {
 	res := shell.Resources{Font: font, FontTex: fontTex, Icons: loadIcons(r, state.Cards)}
 
 	var (
-		in     sim.InputState
-		dl     gfx.DrawList
-		fb     *gfx.Framebuffer
-		period = time.Second / tickRate
-		next   = time.Now()
+		in       sim.InputState
+		dl       gfx.DrawList
+		fb       *gfx.Framebuffer
+		period   = time.Second / tickRate
+		next     = time.Now()
+		nextScan = time.Now().Add(rescan)
 	)
 	for {
+		if time.Now().After(nextScan) {
+			nextScan = time.Now().Add(rescan)
+			tick()
+			if cards, err := card.Scan(dir); err == nil && !sameCards(cards, state.Cards) {
+				state.Cards = cards
+				res.Icons = loadIcons(r, cards)
+			}
+		}
 		events, err := win.Poll()
 		if err != nil {
 			return state, shell.Quit, err
@@ -162,6 +239,26 @@ func show(state shell.State) (shell.State, shell.Action, error) {
 	}
 }
 
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// sameCards reports whether two scans of the card list the same games.
+func sameCards(a, b []card.Card) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // loadIcons uploads the picture of every game that has one. A game without an icon, or
 // with one that cannot be read, simply gets the placeholder tile.
 func loadIcons(r *soft.Renderer, cards []card.Card) map[string]shell.Icon {
@@ -189,7 +286,8 @@ func loadIcons(r *soft.Renderer, cards []card.Card) map[string]shell.Icon {
 }
 
 // runGame runs a game and waits for it. The card was written by a PC, where a file has no
-// permission to execute, so the bit is set here rather than asked of the player.
+// permission to execute, so the bit is set here rather than asked of the player (on the
+// console the card is FAT, where every file is executable already).
 func runGame(c card.Card) error {
 	if fi, err := os.Stat(c.Exec); err == nil && fi.Mode().Perm()&0o111 == 0 {
 		os.Chmod(c.Exec, fi.Mode().Perm()|0o755)
@@ -197,7 +295,18 @@ func runGame(c card.Card) error {
 	cmd := exec.Command(c.Exec)
 	cmd.Dir = c.Dir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
+	if err := startChild(cmd); err != nil {
+		say("game %s: %v", c.Title, err)
+		return err
+	}
+	say("game %s started", c.Title)
+	err := waitChild(cmd)
+	if err != nil {
+		say("game %s ended: %v", c.Title, err)
+	} else {
+		say("game %s ended", c.Title)
+	}
+	return err
 }
 
 // notice turns a failure into the single line the dashboard has room for.

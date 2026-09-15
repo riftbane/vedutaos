@@ -1,4 +1,0 @@
-# VedutaOS defaults. A vedutaos/env on the card overrides them.
-VEDUTA_BACKEND=fbdev
-VEDUTA_SCALE=1
-VEDUTAOS_GAMES=/boot/firmware/games

@@ -1,7 +1,6 @@
 package image
 
 import (
-	"errors"
 	"strconv"
 	"strings"
 
@@ -31,10 +30,38 @@ const (
 	blockEnd   = "# vedutaos end"
 )
 
+// stockConfig is the config.txt the image starts from: what Raspberry Pi OS sets that a
+// console needs, and nothing for HDMI, cameras or audio. The kernels and initramfs files
+// are found by their standard names (kernel8.img and initramfs8, kernel_2712.img and
+// initramfs_2712).
+const stockConfig = `# VedutaOS. The console's panel is in the block at the end; see
+# https://github.com/riftbane/vedutaos/blob/main/docs/quickstart-pi.md
+arm_64bit=1
+auto_initramfs=1
+disable_fw_kms_setup=1
+disable_overscan=1
+arm_boost=1
+
+[cm4]
+otg_mode=1
+
+[cm5]
+dtoverlay=dwc2,dr_mode=host
+
+[pi5]
+dtoverlay=nospi10
+
+[all]
+`
+
 // ConfigTxt returns a Raspberry Pi config.txt with the console's block in it: the panel's
 // overlay for w, nothing when w is nil (HDMI). Everything else in the file is kept as it
-// was, so running it again, or with other settings, changes only the block.
+// was, so running it again, or with other settings, changes only the block; an empty
+// existing file starts from the image's own.
 func ConfigTxt(existing []byte, w *Wiring) []byte {
+	if len(existing) == 0 {
+		existing = []byte(stockConfig)
+	}
 	lines := strings.SplitAfter(string(existing), "\n")
 	var kept []string
 	inside := false
@@ -73,31 +100,15 @@ func ConfigTxt(existing []byte, w *Wiring) []byte {
 		blockEnd + "\n")
 }
 
-// CmdlineSettings are the kernel settings a console needs: no blinking cursor on the text
-// console, and no blanking it after ten minutes without a key. QEMU gets them on its own
-// command line; the Pi reads them from cmdline.txt.
-var CmdlineSettings = []string{"vt.global_cursor_default=0", "consoleblank=0"}
+// CmdlineSettings are the kernel settings the console needs on every machine: no blinking
+// cursor on the text console, no blanking it after ten minutes without a key, and a
+// reboot ten seconds after a panic rather than a console that hangs.
+var CmdlineSettings = []string{"vt.global_cursor_default=0", "consoleblank=0", "panic=10"}
 
-// Cmdline returns a Raspberry Pi cmdline.txt with the console's kernel settings, replacing
-// any earlier value of the same settings and keeping everything else.
-func Cmdline(existing []byte) ([]byte, error) {
-	text := strings.TrimRight(string(existing), "\r\n")
-	if text == "" || strings.ContainsAny(text, "\r\n") {
-		return nil, errors.New("image: cmdline.txt must hold exactly one line")
-	}
-	var out []string
-	for _, f := range strings.Fields(text) {
-		key, _, _ := strings.Cut(f, "=")
-		drop := false
-		for _, s := range CmdlineSettings {
-			if k, _, _ := strings.Cut(s, "="); k == key {
-				drop = true
-			}
-		}
-		if !drop {
-			out = append(out, f)
-		}
-	}
-	out = append(out, CmdlineSettings...)
-	return []byte(strings.Join(out, " ") + "\n"), nil
+// CmdlineTxt returns the Raspberry Pi's cmdline.txt. Kernel messages go to the panel and
+// to the serial port, and /dev/console, where the dashboard and the games write, is the
+// serial port (the last console named). There is no root file system: the initramfs is
+// the system.
+func CmdlineTxt() []byte {
+	return []byte("console=tty1 console=serial0,115200 " + strings.Join(CmdlineSettings, " ") + "\n")
 }

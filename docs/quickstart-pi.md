@@ -15,10 +15,12 @@ from a Command Prompt there).
   `diskutil list` shows it; `/dev/rdiskN` on a Mac). Without a downloaded image it fetches
   this release's once. Imager works here too.
 
+The image is 2 GB: one FAT32 volume. A larger card's remaining space is simply not used.
+
 ## 2. Put a game on the card
 
-Take the card out and put it back in. The PC shows its boot partition as a small drive
-(`bootfs`, `E:` on Windows). Then:
+Take the card out and put it back in. The PC shows it as a drive named `VEDUTAOS`
+(`E:` on Windows). Then:
 
 ```bat
 vedutaos card E:\ --game games\demo
@@ -30,19 +32,19 @@ game's folder into `games` does the same. `vedutaos` lists the games as the dash
 
 Other things a card can carry, each written only when asked:
 
-- `--ssh-key C:\Users\me\.ssh\id_ed25519.pub`: log in as `veduta` over ssh (a Pi 5 on
-  Ethernet; the console itself needs no network).
+- `--debug`: a shell on the serial port (GPIO 14 and 15, 115200 baud, through a USB-serial
+  adapter) and on tty2, for looking at the board.
 - `--scale`, `--fb`, `--pad`: the dashboard's settings, in `vedutaos/env`.
 - `--vshell vshell-arm64`: a newer dashboard than the image's, run from the card.
 
 ## 3. Switch it on
 
-The dashboard appears on the panel. Arrows or the D-pad move, A starts a game, Home (or
-Select and Start together) returns to the dashboard. The first start takes a little longer:
-the card's root partition grows to fill the card.
+The dashboard appears on the panel within seconds. Arrows or the D-pad move, A starts a
+game, Home (or Select and Start together) returns to the dashboard; on the dashboard it
+switches the console off. The card is never written, so the power can be cut at any time.
 
 A USB stick labelled `VEDUTA` with a `games` folder on it is a card too: plugged in at
-start, the console lists its games instead of the boot partition's.
+start, the console lists its games instead of the SD card's.
 
 ## Wiring the panel
 
@@ -62,38 +64,43 @@ header's; GPIO numbers are BCM's.
 | SDO / MISO | not needed |
 
 Wired differently, or with a panel that needs other settings, edit the marked block at the
-end of `config.txt` on the boot partition (`dtparam=reset-gpio=…,dc-gpio=…,backlight-gpio=…`,
+end of `config.txt` on the card (`dtparam=reset-gpio=…,dc-gpio=…,backlight-gpio=…`,
 `speed=…`), or build an image with them: `vedutaos image --pins dc=22,reset=27,backlight=none
---rotate 270 --rgb --invert --spi-speed 16000000`. Without a panel, the dashboard is on HDMI
-when the panel's framebuffer is absent; if a phantom panel takes its place, `--fb /dev/fb0`
-on the card names the HDMI one.
+--rotate 270 --rgb --invert --spi-speed 16000000`. Without a panel there is no picture: the
+image loads no HDMI driver.
 
 ## When something is wrong
 
-Over ssh (a key given with `--ssh-key`, user `veduta`, `sudo` without a password):
+Put `--debug` on the card and connect the serial port. Everything the console does is one
+line of the kernel log, `vedutaos: …`: the modules loaded and the ones that failed, the
+card it found, the framebuffers, the dashboard, each game. In the shell:
 
 ```sh
-systemctl status vedutaos vedutaos-card   # the dashboard, and how the card was found
-sudo journalctl -u vedutaos               # what the dashboard said
-cat /sys/class/graphics/fb*/name          # the panel is the one that is not vc4drmfb
-dmesg | grep -i -e mipi -e firmware       # the panel driver and its start-up file
+dmesg | grep vedutaos                     # the console's own lines
+dmesg | grep -i -e mipi -e firmware -e spi   # the panel driver and its start-up file
+cat /sys/class/graphics/fb*/name          # the panel is the one named panel-mipi-dbi
 cat /etc/vedutaos-release                 # which image this is
 ```
 
-- *The Pi shows a login prompt instead of the dashboard:* `journalctl -u vedutaos`.
-- *The dashboard is on HDMI and the panel stays white:* the panel's driver did not start.
-  Check the wiring, then `dmesg` for `vedutaos-ili9341.bin`.
+- *The panel stays white and the log says `no framebuffer`:* the panel's driver did not
+  start. Check the wiring, then `dmesg` for `vedutaos-ili9341.bin` and `spi`.
+- *`module … : … failed`:* a driver the console counted on is not in this kernel as a
+  module; say which, it is a build fix.
 - *The panel shows a garbled picture:* lower `speed=` in `config.txt`'s block to 16000000,
   then check CS and DC.
+- *Kernel messages on the panel:* the text console was not taken away in time; the
+  dashboard takes it away again every two seconds.
 
 ## What still needs checking on real hardware
 
-None of this has been run on a Pi yet. The image boots and plays on QEMU with the Debian
-kernel it also carries; the Pi kernels, the panel overlay and the firmware are as Raspberry
-Pi OS ships them, untouched by the build. On a board, check:
+None of this has been run on a Pi yet. The console boots and plays on QEMU with Debian's
+kernel; the Pi kernels, the firmware and the device trees are as Raspberry Pi OS ships
+them, unpacked from its packages. On a board, check:
 
-- the first start reaches the dashboard, with no user wizard and no login prompt;
+- the boot firmware loads the kernel and the initramfs from the FAT and init runs;
+- the modules the image carries are the right ones (`panel-mipi-dbi`, `spi-bcm2835` on
+  the boards up to the Pi 4, the SPI driver of the Pi 5's RP1), and nothing else is missing;
 - the dashboard appears on the panel, the right way up and with the right colours;
-- no text cursor blinks over it;
+- a USB pad is read;
 - a Zero 2 W's panel holds 32 MHz on SPI;
 - a USB stick labelled `VEDUTA` is taken as the card.

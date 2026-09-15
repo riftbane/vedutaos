@@ -1,3 +1,0 @@
-# What QEMU boots from; the Pi kernels ignore what they lack.
-virtio_pci
-virtio_blk

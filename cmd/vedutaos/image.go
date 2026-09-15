@@ -6,17 +6,20 @@ import (
 	"io"
 
 	"github.com/riftbane/vedutaos/image"
+	"github.com/riftbane/vedutaos/initramfs"
 	"github.com/riftbane/vedutaos/panel"
 )
 
-// imageCommand builds the console image. Linux and root only; CI does it for releases.
+// imageCommand builds the console image from the pinned packages. Linux or macOS with xz
+// and mtools; CI does it for releases.
 func imageCommand(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("image", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	out := fs.String("out", "out", "`directory` for vedutaos.img, vmlinuz and initrd.img")
-	cache := fs.String("cache", "", "`directory` keeping the downloaded base image (default: --out)")
-	vshell := fs.String("vshell", "", "the dashboard `program` for linux/arm64 (default: built from source)")
-	ver := fs.String("version", version, "version written to "+image.Release)
+	out := fs.String("out", "out", "`directory` for "+image.ImageName+", "+image.KernelName+" and "+image.InitrdName)
+	cache := fs.String("cache", "", "`directory` keeping the downloaded packages (default: --out)")
+	vshell := fs.String("vshell", "", "the console `program` (vshell) for linux/arm64 (default: built from source)")
+	ver := fs.String("version", version, "version written to "+initramfs.Release)
+	size := fs.Int64("size", image.DefaultSize>>20, "the image's size in `MiB`: one FAT32 volume, so what the card has beyond it is not used")
 	rotate := fs.Int("rotate", 90, "how far the panel is turned to lie in landscape: 90 or 270")
 	rgb := fs.Bool("rgb", false, "the panel's subpixels are red-green-blue (most are blue-green-red)")
 	invert := fs.Bool("invert", false, "the panel shows colours inverted without it (common on IPS modules)")
@@ -37,14 +40,14 @@ func imageCommand(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 	}
-	vs, cleanup, err := findVShell(*vshell, stdout)
+	vs, cleanup, err := findVShell(*vshell, *ver, stdout)
 	if err != nil {
 		fmt.Fprintln(stderr, "vedutaos image:", err)
 		return 1
 	}
 	defer cleanup()
 	r, err := image.Build(image.Options{
-		VShell: vs, Version: *ver, Out: *out, Cache: *cache,
+		VShell: vs, Version: *ver, Out: *out, Cache: *cache, Size: *size << 20,
 		Panel:  panel.Options{Rotate: *rotate, RGB: *rgb, Invert: *invert},
 		Wiring: image.Wiring{Pins: p, Speed: *speed}, Verbose: stdout,
 	})
@@ -52,6 +55,6 @@ func imageCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "vedutaos image:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "image: %s\nkernel for QEMU: %s\ninitrd for QEMU: %s\n", r.Image, r.Kernel, r.Initrd)
+	fmt.Fprintf(stdout, "image: %s\nkernel for QEMU: %s\nconsole for QEMU: %s\n", r.Image, r.Kernel, r.Initrd)
 	return 0
 }

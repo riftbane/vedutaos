@@ -1,13 +1,14 @@
 // Command vedutaos makes the VedutaOS image and puts games on cards, from a PC.
 //
-//	vedutaos image [flags]                   build the image (Linux, root)
-//	vedutaos qemu [flags] [-- qemu-args]     boot the image in QEMU with a card of games
-//	vedutaos card <dir> [flags]              put games, settings and keys onto a card
+//	vedutaos image [flags]                   build the image (Linux or macOS; xz and mtools)
+//	vedutaos qemu [flags] [-- qemu-args]     boot the console in QEMU with a card of games
+//	vedutaos card <dir> [flags]              put games and settings onto a card
 //	vedutaos flash <device> [flags]          write the image onto a card (Linux, macOS)
 //
-// The image is one file for a Raspberry Pi and for QEMU. A card is the boot partition of a
-// console, a USB stick labelled VEDUTA, or the folder QEMU shows the emulated machine as a
-// disk; games are folders on it, and nothing is typed on the console.
+// The image is one FAT32 volume: firmware, kernels, the console in an initramfs, and the
+// games. A card is that volume (a PC sees it as a drive named VEDUTAOS), a USB stick
+// labelled VEDUTA, or the folder QEMU shows the emulated machine as a disk; games are
+// folders on it, and nothing is typed on the console.
 package main
 
 import (
@@ -27,9 +28,9 @@ func main() {
 
 const usage = `vedutaos makes the VedutaOS image and its cards.
 
-  vedutaos image [flags]                 build the image (Linux, root)
-  vedutaos qemu [flags] [-- qemu-args]   boot the image in QEMU with a card of games
-  vedutaos card <dir> [flags]            put games, settings and keys onto a card
+  vedutaos image [flags]                 build the image (Linux or macOS; xz and mtools)
+  vedutaos qemu [flags] [-- qemu-args]   boot the console in QEMU with a card of games
+  vedutaos card <dir> [flags]            put games and settings onto a card
   vedutaos flash <device> [flags]        write the image onto a card (Linux, macOS)
   vedutaos version                       print this program's version
 
