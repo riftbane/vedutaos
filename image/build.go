@@ -25,6 +25,7 @@ import (
 
 	"github.com/riftbane/vedutaos/card"
 	"github.com/riftbane/vedutaos/initramfs"
+	"github.com/riftbane/vedutaos/install"
 	"github.com/riftbane/vedutaos/panel"
 )
 
@@ -40,6 +41,10 @@ type Options struct {
 	Wiring   Wiring // DefaultPins and DefaultSPISpeed when zero
 	Fetch    Getter // how packages are downloaded; HTTP when nil
 	Verbose  io.Writer
+	// Games are put into the card's games folder: game folders, release archives or Veduta
+	// projects, as vedutaos card takes them, so a written card plays at once.
+	Games []string
+	Build install.Builder // compiles a project's game; install.GoBuild when nil
 }
 
 // Result names what Build wrote.
@@ -220,6 +225,17 @@ func Build(o Options) (Result, error) {
 	}
 	if err := os.MkdirAll(filepath.Join(stage, card.Games), 0o755); err != nil {
 		return r, err
+	}
+	build := o.Build
+	if build == nil {
+		build = install.GoBuild
+	}
+	for _, g := range o.Games {
+		dir, err := install.Game(filepath.Join(stage, card.Games), g, build)
+		if err != nil {
+			return r, fmt.Errorf("image: game %s: %w", g, err)
+		}
+		fmt.Fprintf(o.Verbose, "game %s\n", filepath.Base(dir))
 	}
 	if err := os.MkdirAll(filepath.Join(stage, card.Dir), 0o755); err != nil {
 		return r, err

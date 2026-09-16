@@ -52,9 +52,15 @@ func TestBuild(t *testing.T) {
 	vshell := minimalELF(elf.ET_EXEC, elf.EM_AARCH64)
 	work := t.TempDir()
 	os.WriteFile(filepath.Join(work, "vshell"), vshell, 0o755)
+	// A game folder goes onto the card as it is.
+	game := filepath.Join(work, "cube")
+	os.MkdirAll(filepath.Join(game, "assets"), 0o755)
+	os.WriteFile(filepath.Join(game, "card.json"), []byte(`{"veduta": "card/1", "title": "cube", "name": "cube", "exec": "cube"}`), 0o644)
+	os.WriteFile(filepath.Join(game, "cube"), minimalELF(elf.ET_EXEC, elf.EM_AARCH64), 0o755)
+	os.WriteFile(filepath.Join(game, "assets", "x.json"), []byte("{}"), 0o644)
 	r, err := Build(Options{
 		Packages: pkgs, VShell: filepath.Join(work, "vshell"), Version: "v9.9.9", Out: filepath.Join(work, "out"),
-		Size: 64 << 20, Panel: panel.Options{Rotate: 90}, Fetch: get,
+		Size: 64 << 20, Panel: panel.Options{Rotate: 90}, Fetch: get, Games: []string{game},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +85,8 @@ func TestBuild(t *testing.T) {
 	for _, p := range paths {
 		have[strings.ToLower(p)] = true
 	}
-	for _, want := range []string{"/kernel8.img", "/initramfs8", "/kernel_2712.img", "/initramfs_2712", "/config.txt", "/cmdline.txt", "/start.elf", "/bootcode.bin", "/bcm2710-x.dtb", "/overlays/mipi-dbi-spi.dtbo", "/vedutaos/release"} {
+	for _, want := range []string{"/kernel8.img", "/initramfs8", "/kernel_2712.img", "/initramfs_2712", "/config.txt", "/cmdline.txt", "/start.elf", "/bootcode.bin", "/bcm2710-x.dtb", "/overlays/mipi-dbi-spi.dtbo", "/vedutaos/release",
+		"/games/cube/card.json", "/games/cube/cube", "/games/cube/assets/x.json"} {
 		if !have[want] {
 			t.Errorf("the card lacks %s; it has %v", want, paths)
 		}

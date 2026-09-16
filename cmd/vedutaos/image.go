@@ -25,6 +25,8 @@ func imageCommand(args []string, stdout, stderr io.Writer) int {
 	invert := fs.Bool("invert", false, "the panel shows colours inverted without it (common on IPS modules)")
 	speed := fs.Int("spi-speed", image.DefaultSPISpeed, "SPI clock of the panel, in `hertz`")
 	pins := fs.String("pins", "", "GPIO lines of the panel, BCM numbers, as `dc=24,reset=25,backlight=18`; none for a line not connected")
+	var games repeated
+	fs.Var(&games, "game", "a game to put on the image's card: a game folder, a release `archive` or a Veduta project; repeat for more")
 	if _, err := parse(fs, args); err != nil {
 		return 2
 	}
@@ -49,7 +51,7 @@ func imageCommand(args []string, stdout, stderr io.Writer) int {
 	r, err := image.Build(image.Options{
 		VShell: vs, Version: *ver, Out: *out, Cache: *cache, Size: *size << 20,
 		Panel:  panel.Options{Rotate: *rotate, RGB: *rgb, Invert: *invert},
-		Wiring: image.Wiring{Pins: p, Speed: *speed}, Verbose: stdout,
+		Wiring: image.Wiring{Pins: p, Speed: *speed}, Verbose: stdout, Games: games,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "vedutaos image:", err)
