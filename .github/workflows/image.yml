@@ -7,9 +7,9 @@ on:
   push:
     tags: ["v*"]
     branches: [main]
-    paths: ["image/**", "initramfs/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml", ".github/demos.env"]
+    paths: ["image/**", "initramfs/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml"]
   pull_request:
-    paths: ["image/**", "initramfs/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml", ".github/demos.env"]
+    paths: ["image/**", "initramfs/**", "cmd/**", "shell/**", "card/**", "panel/**", "install/**", "test/e2e/**", "go.mod", ".github/workflows/image.yml"]
   workflow_dispatch:
 
 permissions:
@@ -45,12 +45,8 @@ jobs:
           version="${GITHUB_REF_NAME}"
           case "${GITHUB_REF}" in refs/tags/*) ;; *) version="dev-${GITHUB_SHA::7}" ;; esac
           go build -o out/vedutaos ./cmd/vedutaos
-          # The demo games go onto the image's card, so a written card plays at once.
-          . .github/demos.env
-          engine="$(go list -m -f '{{.Version}}' github.com/riftbane/veduta)"
-          git clone --quiet --depth 1 --branch "$engine" https://github.com/riftbane/veduta build/engine
-          git clone --quiet --depth 1 --branch "$TINYCUBE_TAG" https://github.com/riftbane/tinycube build/tinycube
-          ./out/vedutaos image --out out --cache cache --version "$version" --game build/engine/template --game build/tinycube
+          # No games on the image's card: a person adds theirs.
+          ./out/vedutaos image --out out --cache cache --version "$version"
           ls -la out
 
       - name: boot it and play
