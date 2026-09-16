@@ -18,8 +18,10 @@ back, driven from the keyboard. You do not get the SPI panel, which nothing emul
 Download the archive for your PC from the
 [latest release](https://github.com/riftbane/vedutaos/releases/latest):
 `vedutaos_<version>_windows_amd64.zip`, `…_linux_amd64.tar.gz` or `…_linux_arm64.tar.gz`.
-It holds `vedutaos`, `vshell-arm64` (the console program, for updating a card), `games\demo`
-(the engine's demo, built for the console) and these guides.
+It holds `vedutaos`, `vshell-arm64` (the console program, for updating a card), two games
+built for the console, `games\demo` (the engine's demo) and `games\tinycube` (a creative
+block world: walk or fly, break blocks with X, place them with Y, Select flies, Start picks
+the block), and these guides.
 
 On Windows, unpack it into a folder of your choosing, for example `C:\vedutaos`. If Windows
 refuses to run a program from it, right-click the zip, choose **Properties**, tick
@@ -32,10 +34,10 @@ vedutaos version
 
 In PowerShell a program in the current folder is started as `.\vedutaos`.
 
-## 3. Boot the console with the demo
+## 3. Boot the console with the demos
 
 ```bat
-vedutaos qemu --game games\demo
+vedutaos qemu --game games\demo --game games\tinycube
 ```
 
 `--game` also takes another game folder, a release archive, or a Veduta project (built for

@@ -19,6 +19,9 @@ The image is 2 GB: one FAT32 volume. A larger card's remaining space is simply n
 
 ## 2. Put a game on the card
 
+The image already holds two games, `demo` (the engine's demo) and `tinycube` (a creative
+block world): a card written with it plays at once, and this step is for adding more.
+
 Take the card out and put it back in. The PC shows it as a drive named `VEDUTAOS`
 (`E:` on Windows). Then:
 

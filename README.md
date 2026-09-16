@@ -23,12 +23,12 @@ themselves are still to be proved on hardware.
 Download the [latest release](https://github.com/riftbane/vedutaos/releases/latest).
 
 ```sh
-# a Raspberry Pi: write the image, then put a game on the card (a drive named VEDUTAOS)
+# a Raspberry Pi: write the image; it already holds the demo games (demo, tinycube)
 sudo vedutaos flash /dev/sdX            # Windows: Raspberry Pi Imager, "Use custom"
-vedutaos card /media/me/VEDUTAOS --game games/demo
+vedutaos card /media/me/VEDUTAOS --game another-game   # more games, when you have them
 
 # an emulated machine on this PC: fetches the kernel and the console once, then boots
-vedutaos qemu --game games/demo
+vedutaos qemu --game games/demo --game games/tinycube
 ```
 
 The steps, the panel's wiring and what to check when something is wrong are in

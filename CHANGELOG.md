@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+## v0.4.0 — 2026-09-16
+
+TinyCube joins the engine's demo: a creative block world (five blocks, walking and flying,
+breaking and placing, day and night) made with Veduta v1.4.1. The image now carries both
+games, so a card written with it plays at once, and every release archive has them in
+`games`.
+
+### Added
+
+- `vedutaos image --game` (repeatable) puts games onto the image's card: game folders,
+  release archives or Veduta projects, as `vedutaos card` takes them.
+- The image and release workflows build the engine's demo and TinyCube (the tag pinned in
+  `.github/demos.env`, v0.1.0) for the console and ship them: in the image's `games` and in
+  each archive's `games/demo` and `games/tinycube`.
+
+### Changed
+
+- Built against engine v1.4.1 (from v1.1.1): the dashboard draws as before (its goldens
+  are unchanged), and the engine's demo is v1.4.1's template, a streamed world with hills,
+  a pond, grass and flowers.
+
+### Verified
+
+- `go test ./...`; an image built locally with both games (`vedutaos image --game …`), whose
+  card lists `games/demo` and `games/tinycube`; `VEDUTAOS_E2E=1 go test ./test/e2e` passes
+  (46 s). TinyCube booted on QEMU from the dashboard: it started, walked, broke a block,
+  flew and came back to the dashboard on Home.
+
+### Not verified
+
+- On a Raspberry Pi, as for v0.3.0: the panel, the pad, and whether TinyCube holds 20 Hz on
+  a Pi Zero 2 W (under emulation it ran slower than real time, as every game does).
+
 ## v0.3.0 — 2026-09-15
 
 VedutaOS is bare Linux. The image is one FAT32 volume with the Raspberry Pi firmware, the

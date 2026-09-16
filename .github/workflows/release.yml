@@ -50,13 +50,16 @@ jobs:
           # Nobody making a card needs Go.
           GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=${tag}" -o build/vshell-arm64 ./cmd/vshell
 
-          # The engine's demo game, from the engine release this repository builds against,
-          # built for the console by the tool itself, so a card can be tried with nothing but
-          # the archive.
+          # The demo games: the engine's, from the engine release this repository builds
+          # against, and TinyCube at its pinned tag, built for the console by the tool itself,
+          # so a card can be tried with nothing but the archive.
+          . .github/demos.env
           engine="$(go list -m -f '{{.Version}}' github.com/riftbane/veduta)"
           git clone --quiet --depth 1 --branch "$engine" https://github.com/riftbane/veduta build/engine
-          go run ./cmd/vedutaos card build/democard --game build/engine/template
+          git clone --quiet --depth 1 --branch "$TINYCUBE_TAG" https://github.com/riftbane/tinycube build/tinycube
+          go run ./cmd/vedutaos card build/democard --game build/engine/template --game build/tinycube
           test -f build/democard/games/demo/card.json
+          test -f build/democard/games/tinycube/card.json
 
           for target in windows/amd64 linux/amd64 linux/arm64; do
             os="${target%/*}"
@@ -68,7 +71,7 @@ jobs:
             GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=${tag}" -o "$stage/$exe" ./cmd/vedutaos
             cp build/vshell-arm64 README.md CHANGELOG.md "$stage/"
             cp docs/*.md "$stage/docs/"
-            cp -r build/democard/games/demo "$stage/games/demo"
+            cp -r build/democard/games/demo build/democard/games/tinycube "$stage/games/"
             name="vedutaos_${tag}_${os}_${arch}"
             if [ "$os" = windows ]; then
               (cd "$stage" && zip -q -X -r "../../dist/${name}.zip" "$exe" vshell-arm64 README.md CHANGELOG.md docs games)
