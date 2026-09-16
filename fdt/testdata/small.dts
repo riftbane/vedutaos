@@ -1,0 +1,21 @@
+/dts-v1/;
+/memreserve/ 0x40000000 0x1000;
+/ {
+	model = "test";
+	compatible = "a,b", "c,d";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	soc {
+		pio: pinctrl@300b000 {
+			#gpio-cells = <3>;
+			reg = <0x300b000 0x400>;
+		};
+		spi1: spi@5011000 {
+			status = "disabled";
+			empty;
+		};
+	};
+	chosen {
+		ref = <&pio 7 4 0>;
+	};
+};
