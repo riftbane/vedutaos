@@ -15,8 +15,8 @@ import (
 	"strings"
 )
 
-// modules is a kernel's module tree as its package ships it: the compressed .ko files
-// under kernel/ and modules.builtin. The package carries no modules.dep (depmod writes
+// modules is a kernel's module tree as its package ships it: the .ko files, compressed or
+// not, under kernel/ and modules.builtin. The package carries no modules.dep (depmod writes
 // that when the package is installed), so what a module needs is read from the module
 // itself, from the .modinfo section every one carries.
 type modules struct {
@@ -36,9 +36,11 @@ func moduleName(file string) string {
 }
 
 // loadModules reads the module tree of the kernel unpacked under root, which holds one
-// release under usr/lib/modules.
+// release under usr/lib/modules (Debian, Raspberry Pi) or lib/modules (Armbian).
 func loadModules(root string) (*modules, error) {
 	releases, _ := filepath.Glob(filepath.Join(root, "usr", "lib", "modules", "*", "modules.builtin"))
+	armbian, _ := filepath.Glob(filepath.Join(root, "lib", "modules", "*", "modules.builtin"))
+	releases = append(releases, armbian...)
 	if len(releases) != 1 {
 		return nil, fmt.Errorf("%s: want one kernel under usr/lib/modules, found %d", root, len(releases))
 	}

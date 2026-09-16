@@ -65,10 +65,15 @@ header's; GPIO numbers are BCM's.
 | LED / BL | GPIO 18 (pin 12) |
 | SDO / MISO | not needed |
 
+The buttons, each between its pin and ground, are wired as on the Orange Pi Zero 2W, whose
+header is the same ([the table](quickstart-orangepi.md#2-wiring)): Up GPIO 5, Down 6, Left
+13, Right 19, A 26, B 21, Select 20, Cancel 16, Home 12.
+
 Wired differently, or with a panel that needs other settings, edit the marked block at the
 end of `config.txt` on the card (`dtparam=reset-gpio=…,dc-gpio=…,backlight-gpio=…`,
-`speed=…`), or build an image with them: `vedutaos image --pins dc=22,reset=27,backlight=none
---rotate 270 --rgb --invert --spi-speed 16000000`. Without a panel there is no picture: the
+`speed=…`, a `dtoverlay=gpio-key,…` line per button), or build an image with them:
+`vedutaos image --pins dc=22,reset=27,backlight=none,a=17 --rotate 270 --rgb --invert
+--spi-speed 16000000`. Without a panel there is no picture: the
 image loads no HDMI driver.
 
 ## When something is wrong
@@ -103,6 +108,6 @@ them, unpacked from its packages. On a board, check:
 - the modules the image carries are the right ones (`panel-mipi-dbi`, `spi-bcm2835` on
   the boards up to the Pi 4, the SPI driver of the Pi 5's RP1), and nothing else is missing;
 - the dashboard appears on the panel, the right way up and with the right colours;
-- a USB pad is read;
+- the buttons and a USB pad are read;
 - a Zero 2 W's panel holds 32 MHz on SPI;
 - a USB stick labelled `VEDUTA` is taken as the card.

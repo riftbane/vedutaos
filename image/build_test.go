@@ -36,6 +36,10 @@ func TestBuild(t *testing.T) {
 		Firmware:   pin("raspi-firmware", map[string][]byte{"usr/lib/raspi-firmware/start.elf": []byte("start"), "usr/lib/raspi-firmware/bootcode.bin": []byte("boot"), "usr/lib/raspi-firmware/fixup.dat": []byte("fix")}),
 		KernelV8:   pin("linux-v8", fakeKernel(t, "6.18.0-v8", pi, piBuiltin)),
 		Kernel2712: pin("linux-2712", fakeKernel(t, "6.18.0-2712", pi, piBuiltin)),
+		KernelSunxi: pin("linux-sunxi", fakeSunxiKernel(t, "6.18.0-sunxi64", map[string][]string{
+			"panel_mipi_dbi": {"drm_mipi_dbi"}, "drm_mipi_dbi": nil, "gpio_backlight": nil, "gpio_keys": nil, "sunxi": {"musb_hdrc"}, "musb_hdrc": nil,
+		}, []string{"vfat", "nls_cp437", "usbhid", "hid_generic", "evdev"})),
+		UBootZero2W: pin("u-boot-zero2w", map[string][]byte{"usr/lib/linux-u-boot-current-orangepizero2w/u-boot-sunxi-with-spl.bin": []byte("eGON.BT0 u-boot")}),
 		KernelVirt: pin("linux-virt", fakeKernel(t, "6.12.0-arm64", map[string][]string{
 			"virtio_blk": nil, "virtio_gpu": {"drm"}, "drm": nil, "xhci_pci": {"xhci_hcd"}, "xhci_hcd": nil,
 			"usbhid": {"hid"}, "hid_generic": {"hid"}, "hid": nil, "evdev": nil, "vfat": {"fat"}, "fat": nil, "nls_cp437": nil, "nls_ascii": nil,
@@ -86,6 +90,7 @@ func TestBuild(t *testing.T) {
 		have[strings.ToLower(p)] = true
 	}
 	for _, want := range []string{"/kernel8.img", "/initramfs8", "/kernel_2712.img", "/initramfs_2712", "/config.txt", "/cmdline.txt", "/start.elf", "/bootcode.bin", "/bcm2710-x.dtb", "/overlays/mipi-dbi-spi.dtbo", "/vedutaos/release",
+		"/extlinux/extlinux.conf", "/sunxi/image", "/sunxi/initrd.img", "/sunxi/" + Zero2WDTB,
 		"/games/cube/card.json", "/games/cube/cube", "/games/cube/assets/x.json"} {
 		if !have[want] {
 			t.Errorf("the card lacks %s; it has %v", want, paths)
@@ -94,8 +99,13 @@ func TestBuild(t *testing.T) {
 	if !have["/games/"] && !have["/games"] {
 		t.Errorf("the card lacks the games folder: %v", paths)
 	}
+	// U-Boot sits where the Allwinner boot ROM reads it, before the partition.
+	img, _ := os.ReadFile(r.Image)
+	if !bytes.Equal(img[ubootOffset:ubootOffset+15], []byte("eGON.BT0 u-boot")) || img[510] != 0x55 {
+		t.Error("U-Boot is not at 8 KiB, or it overwrote the partition table")
+	}
 	for _, p := range paths {
-		if strings.HasSuffix(strings.ToLower(p), "vmlinuz") || strings.Contains(p, "initrd.img") {
+		if strings.HasSuffix(strings.ToLower(p), "vmlinuz") || strings.HasPrefix(p, "/initrd.img") {
 			t.Errorf("the QEMU kernel does not belong on the card: %s", p)
 		}
 	}
@@ -192,6 +202,32 @@ func TestBuild(t *testing.T) {
 		if piFiles[none] {
 			t.Errorf("initramfs8 holds %s", none)
 		}
+	}
+
+	// The Orange Pi's initramfs carries its kernel's panel, backlight, buttons and OTG port,
+	// and its tree has the panel in it.
+	for _, f := range []string{"sunxi/initrd.img", "sunxi/" + Zero2WDTB} {
+		mcopy := exec.Command("mcopy", "-i", r.Image+"@@"+"1048576", "-n", "::/"+f, filepath.Join(work, filepath.Base(f)))
+		mcopy.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
+		if out, err := mcopy.CombinedOutput(); err != nil {
+			t.Fatalf("mcopy: %v\n%s", err, out)
+		}
+	}
+	var sunxiMods []string
+	for _, e := range readInitramfs(t, filepath.Join(work, "initrd.img")) {
+		if strings.HasSuffix(e.Name, ".ko") {
+			sunxiMods = append(sunxiMods, moduleName(e.Name))
+		}
+		if e.Name == "init" && !bytes.Equal(e.Data, vshell) {
+			t.Error("the Orange Pi's init is not the dashboard")
+		}
+	}
+	sort.Strings(sunxiMods)
+	if got, want := strings.Join(sunxiMods, " "), "drm_mipi_dbi gpio_backlight gpio_keys musb_hdrc panel_mipi_dbi sunxi"; got != want {
+		t.Errorf("Orange Pi modules %s, want %s", got, want)
+	}
+	if dtb, _ := os.ReadFile(filepath.Join(work, Zero2WDTB)); !bytes.Contains(dtb, []byte(panel.Compatible)) {
+		t.Error("the Orange Pi's device tree has no panel")
 	}
 }
 

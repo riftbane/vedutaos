@@ -24,7 +24,7 @@ func imageCommand(args []string, stdout, stderr io.Writer) int {
 	rgb := fs.Bool("rgb", false, "the panel's subpixels are red-green-blue (most are blue-green-red)")
 	invert := fs.Bool("invert", false, "the panel shows colours inverted without it (common on IPS modules)")
 	speed := fs.Int("spi-speed", image.DefaultSPISpeed, "SPI clock of the panel, in `hertz`")
-	pins := fs.String("pins", "", "GPIO lines of the panel, BCM numbers, as `dc=24,reset=25,backlight=18`; none for a line not connected")
+	pins := fs.String("pins", "", "GPIO lines of the panel and the buttons, Raspberry Pi (BCM) numbers, as `dc=24,reset=25,backlight=18,up=5,down=6,left=13,right=19,a=26,b=21,select=20,cancel=16,home=12`; none for a line not connected")
 	var games repeated
 	fs.Var(&games, "game", "a game to put on the image's card: a game folder, a release `archive` or a Veduta project; repeat for more")
 	if _, err := parse(fs, args); err != nil {

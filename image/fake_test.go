@@ -7,7 +7,9 @@ import (
 	"debug/elf"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -135,5 +137,24 @@ func fakeKernel(t *testing.T, rel string, mods map[string][]string, builtin []st
 		}
 		i++
 	}
+	return files
+}
+
+// fakeSunxiKernel returns Armbian's kernel package as it is laid out: modules under
+// lib/modules, device trees under usr/lib/linux-image-<release>, the real board tree.
+func fakeSunxiKernel(t *testing.T, rel string, mods map[string][]string, builtin []string) map[string][]byte {
+	t.Helper()
+	files := map[string][]byte{}
+	for name, b := range fakeKernel(t, rel, mods, builtin) {
+		if strings.Contains(name, "/dtb/") {
+			continue
+		}
+		files[strings.TrimPrefix(name, "usr/")] = b
+	}
+	dtb, err := os.ReadFile(filepath.Join("testdata", Zero2WDTB))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files["usr/lib/linux-image-"+rel+"/allwinner/"+Zero2WDTB] = dtb
 	return files
 }

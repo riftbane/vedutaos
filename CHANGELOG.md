@@ -15,6 +15,21 @@ runs itself. No game ships any more.
   cooked files), with no Go, and list it as `Lua`.
 - The dashboard's menu: Select opens it, A chooses, B, Cancel or Select close it. Its one
   entry, POWER OFF, switches the console off.
+- The Orange Pi Zero 2W, the reference board, boots the same image: Armbian's U-Boot
+  (2026.07) at 8 KiB before the partition, `extlinux/extlinux.conf`, Armbian's kernel
+  6.18.44 (`sunxi/Image`) with the console's initramfs (panel-mipi-dbi, gpio_backlight,
+  gpio_keys, the OTG port's musb), and the board's device tree edited at build: SPI1 with
+  the panel on chip select 0, the backlight, the buttons as gpio-keys, HDMI off. Two pins
+  join `image/packages.go` from Armbian's pool, with two mirrors.
+- `fdt`: reads, edits and writes device tree blobs in Go; the Zero 2W's tree read back
+  through it matches the original under `dtc`.
+- Nine buttons on the header, on every board: Up GPIO 5, Down 6, Left 13, Right 19, A 26,
+  B 21, Select 20, Cancel 16, Home 12 (Raspberry Pi numbers; the Zero 2W's header is the
+  same), reporting the codes the engine reads from the handheld. On the Pis they are
+  `dtoverlay=gpio-key` lines in `config.txt`'s block. `vedutaos image --pins` takes them
+  (`a=17`, `home=none`) and refuses a line used twice, one of SPI or of the serial port.
+- `docs/quickstart-orangepi.md`: the boot chain, the wiring of the panel, the buttons and
+  the serial port, and what the board still has to prove.
 
 ### Changed
 
@@ -31,6 +46,14 @@ runs itself. No game ships any more.
 
 - `go test ./...`; an image built locally (`vedutaos image`, initrd 4.4 MB);
   `VEDUTAOS_E2E=1 go test ./test/e2e` passes (36 s): the Lua game runs until Home.
+- The image built with the real Armbian packages: `eGON.BT0` at 8 KiB + 4, `sunxi/` and
+  `extlinux/` on the volume, the Orange Pi initramfs (3.4 MB) with the eight modules its
+  kernel does not build in; the edited tree decompiles with `dtc`.
+
+### Not verified
+
+- Nothing has run on an Orange Pi Zero 2W or a Raspberry Pi: U-Boot, the kernel, the panel
+  on SPI1 and the buttons are unproved. No emulator runs the H618.
 
 ## v0.4.0 — 2026-09-16
 

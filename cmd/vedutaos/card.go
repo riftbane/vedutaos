@@ -177,9 +177,14 @@ func describe(out io.Writer, dir string) error {
 	return nil
 }
 
-// parsePins reads "dc=24,reset=25,backlight=18"; a name left out keeps its value in pins,
-// and "none" is a line not connected.
+// parsePins reads "dc=24,reset=25,backlight=18,a=26"; a name left out keeps its value in
+// pins, and "none" is a line not connected.
 func parsePins(s string, pins image.Pins) (image.Pins, error) {
+	lines := pins.Lines()
+	var names []string
+	for _, l := range lines {
+		names = append(names, l.Name)
+	}
 	for _, part := range strings.Split(s, ",") {
 		name, value, ok := strings.Cut(strings.TrimSpace(part), "=")
 		n := -1
@@ -193,19 +198,18 @@ func parsePins(s string, pins image.Pins) (image.Pins, error) {
 		if !ok {
 			return pins, fmt.Errorf("--pins: %q is not name=GPIO number", part)
 		}
-		switch name {
-		case "dc":
-			if n < 0 {
-				return pins, errors.New("--pins: dc must be connected")
+		found := false
+		for _, l := range lines {
+			if l.Name == name {
+				*l.GPIO, found = n, true
 			}
-			pins.DC = n
-		case "reset":
-			pins.Reset = n
-		case "backlight":
-			pins.Backlight = n
-		default:
-			return pins, fmt.Errorf("--pins: unknown line %q (dc, reset, backlight)", name)
 		}
+		if !found {
+			return pins, fmt.Errorf("--pins: unknown line %q (%s)", name, strings.Join(names, ", "))
+		}
+	}
+	if err := pins.Check(); err != nil {
+		return pins, fmt.Errorf("--%w", err)
 	}
 	return pins, nil
 }

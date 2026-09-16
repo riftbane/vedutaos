@@ -1,22 +1,22 @@
 # VedutaOS
 
-A small console that plays [Veduta](https://github.com/riftbane/veduta) games: a Raspberry
-Pi behind a 320×240 panel, a gamepad, and a dashboard listing the games present on its SD
-card. Games arrive by dragging a folder onto the card from a PC — there is no store, no
+A small console that plays [Veduta](https://github.com/riftbane/veduta) games: an Orange Pi
+Zero 2W (or a Raspberry Pi) behind a 320×240 panel, nine buttons or a gamepad, and a
+dashboard listing the games present on its SD card. Games arrive by dragging a folder onto the card from a PC — there is no store, no
 installer and no network.
 
 VedutaOS is an image, `vedutaos.img.xz`, and it is bare Linux: one FAT32 volume holding
-the Raspberry Pi firmware, the Pi kernels, and for each kernel an initramfs with the
-console in it — the dashboard, which is also the system's init, a static busybox, the
+the Raspberry Pi firmware and kernels, Armbian's kernel for the Orange Pi with its U-Boot
+before the volume, and for each kernel an initramfs with the console in it — the dashboard, which is also the system's init, a static busybox, the
 panel's firmware and a dozen drivers. No distribution, no root file system, no service
 manager, no users, no network. The card is mounted read-only and the console is immune to
 having its power cut. The same console, in an initramfs for Debian's arm64 kernel, boots on
 QEMU, which is how it is tested. Each release carries the image, that kernel and initramfs,
 and `vedutaos`, the program that puts games on cards and boots the console on a PC.
 
-**Not yet run on a Raspberry Pi.** The console boots and plays end to end on an emulated
-ARM64 machine, in this repository's CI, at every change. The panel, the pad and the boards
-themselves are still to be proved on hardware.
+**Not yet run on a board.** The console boots and plays end to end on an emulated ARM64
+machine, in this repository's CI, at every change. The panel, the buttons, the pad and the
+boards themselves are still to be proved on hardware.
 
 ## Making a console
 
@@ -31,14 +31,17 @@ vedutaos card /media/me/VEDUTAOS --game mygame   # a game folder, archive or Ved
 vedutaos qemu --game mygame
 ```
 
-The steps, the panel's wiring and what to check when something is wrong are in
+The steps, the wiring and what to check when something is wrong are in
+[VedutaOS on an Orange Pi Zero 2W](docs/quickstart-orangepi.md),
 [VedutaOS on a Raspberry Pi](docs/quickstart-pi.md) and [VedutaOS on QEMU](docs/quickstart-qemu.md).
 
 ## The hardware it is for
 
-- Raspberry Pi 5 now, Raspberry Pi Zero 2 W next: both are 64-bit, so one image serves them.
+- The Orange Pi Zero 2W (Allwinner H618, 1 GB), the reference board; the Raspberry Pi 5 and
+  Zero 2 W boot the same image.
 - A 320×240 SPI panel with an ILI9341 controller, refreshed 20 times a second.
-- A wired USB gamepad (a Rii GP100), read as ordinary Linux input.
+- Nine buttons on the header (D-pad, A, B, Select, Cancel, Home), read through the kernel's
+  gpio-keys, or a wired USB gamepad; the same wiring on every board.
 
 ## The card
 
@@ -100,7 +103,8 @@ Backspace for Cancel, Ctrl+Q for Home.
 ## How the console starts
 
 The Pi firmware loads `kernel8.img` (or `kernel_2712.img` on a Pi 5) and its initramfs
-from the card. The kernel runs `/init`, which is `vshell`: it mounts `/proc`, `/sys` and
+from the card; on the Orange Pi, U-Boot loads `sunxi/Image`, `sunxi/initrd.img` and the
+board's device tree, as `extlinux/extlinux.conf` says. The kernel runs `/init`, which is `vshell`: it mounts `/proc`, `/sys` and
 `/dev`, loads the modules in `/lib/modules/order`, waits for a volume labelled `VEDUTA`
 or, failing that, `VEDUTAOS`, mounts it read-only on `/boot/firmware`, applies the card's
 settings, takes the framebuffer away from the text console, and shows the dashboard. It
@@ -117,8 +121,9 @@ hardware:
 go test ./...
 ```
 
-The image is built from five pinned Debian packages (`image/packages.go`: the Raspberry Pi
-firmware and kernels, Debian's arm64 kernel, busybox), downloaded and unpacked without
+The image is built from seven pinned Debian packages (`image/packages.go`: the Raspberry Pi
+firmware and kernels, Armbian's sunxi64 kernel and Orange Pi Zero 2W U-Boot, Debian's arm64
+kernel, busybox), downloaded and unpacked without
 installing anything. It needs `xz` and mtools, no root and no emulator, and takes under a
 minute once the packages are cached:
 

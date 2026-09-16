@@ -140,11 +140,13 @@ func TestDashboardBuiltFromSource(t *testing.T) {
 }
 
 func TestParsePins(t *testing.T) {
-	got, err := parsePins("dc=22,reset=none,backlight=none", image.DefaultPins)
-	if err != nil || got != (image.Pins{DC: 22, Reset: -1, Backlight: -1}) {
+	got, err := parsePins("dc=22,reset=none,backlight=none,home=none,a=17", image.DefaultPins)
+	want := image.DefaultPins
+	want.DC, want.Reset, want.Backlight, want.Home, want.A = 22, -1, -1, -1, 17
+	if err != nil || got != want {
 		t.Errorf("%+v %v", got, err)
 	}
-	for _, bad := range []string{"dc=none", "cs=8", "dc=x", "dc"} {
+	for _, bad := range []string{"dc=none", "cs=8", "dc=x", "dc", "a=5", "up=10"} {
 		if _, err := parsePins(bad, image.DefaultPins); err == nil {
 			t.Errorf("%q accepted", bad)
 		}

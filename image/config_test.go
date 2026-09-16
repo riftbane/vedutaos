@@ -16,7 +16,9 @@ func TestConfigTxtChangesOnlyItsBlock(t *testing.T) {
 	if twice := ConfigTxt(once, wired()); !bytes.Equal(twice, once) {
 		t.Fatalf("second run changed the file:\n%s", twice)
 	}
-	other := &Wiring{Pins: Pins{DC: 22, Reset: -1, Backlight: -1}, Speed: 16000000}
+	pins := DefaultPins
+	pins.DC, pins.Reset, pins.Backlight, pins.Home = 22, -1, -1, -1
+	other := &Wiring{Pins: pins, Speed: 16000000}
 	changed := ConfigTxt(once, other)
 	if bytes.Count(changed, []byte("# vedutaos begin")) != 1 || !bytes.Contains(changed, []byte("speed=16000000")) {
 		t.Fatalf("block not replaced:\n%s", changed)
@@ -24,12 +26,34 @@ func TestConfigTxtChangesOnlyItsBlock(t *testing.T) {
 	if !bytes.Contains(changed, []byte("dtparam=dc-gpio=22\n")) {
 		t.Fatalf("unconnected lines should be left out:\n%s", changed)
 	}
+	if bytes.Contains(changed, []byte("label=home")) || !bytes.Contains(changed, []byte("dtoverlay=gpio-key,gpio=26,keycode=304,label=a\n")) {
+		t.Fatalf("buttons: an unconnected one listed or a connected one not:\n%s", changed)
+	}
 	if back := ConfigTxt(changed, nil); string(back) != stockConfig {
 		t.Fatalf("taking the panel away did not give back the stock file:\n%s", back)
 	}
 	for _, want := range []string{"auto_initramfs=1", "arm_64bit=1", "dtoverlay=mipi-dbi-spi,spi0-0,speed=32000000,write-only", "dtparam=reset-gpio=25,dc-gpio=24,backlight-gpio=18"} {
 		if !bytes.Contains(once, []byte(want)) {
 			t.Errorf("config.txt lacks %q", want)
+		}
+	}
+}
+
+func TestPinsCheck(t *testing.T) {
+	if err := DefaultPins.Check(); err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(*Pins){
+		"dc unconnected": func(p *Pins) { p.DC = -1 },
+		"off the header": func(p *Pins) { p.A = 28 },
+		"twice":          func(p *Pins) { p.B = p.A },
+		"the SPI bus":    func(p *Pins) { p.Up = 10 },
+		"the serial":     func(p *Pins) { p.Home = 14 },
+	} {
+		p := DefaultPins
+		change(&p)
+		if err := p.Check(); err == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
 }

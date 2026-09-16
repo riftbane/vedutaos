@@ -1,20 +1,76 @@
 package image
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/riftbane/vedutaos/panel"
 )
 
-// Pins are the Raspberry Pi GPIO lines (BCM numbering) the panel is wired to. A negative
-// Reset or Backlight means the line is not connected.
+// Pins are the GPIO lines of the 40-pin header, by their Raspberry Pi numbers (BCM), that
+// the panel and the handheld's buttons are wired to. The Orange Pi Zero 2W has the same
+// header, so the same numbers name the same pins there. A negative line is not connected;
+// DC must be. Each button is wired between its line and ground.
 type Pins struct {
-	DC, Reset, Backlight int
+	DC, Reset, Backlight                              int
+	Up, Down, Left, Right, A, B, Select, Cancel, Home int
 }
 
 // DefaultPins is the wiring the documentation shows.
-var DefaultPins = Pins{DC: 24, Reset: 25, Backlight: 18}
+var DefaultPins = Pins{DC: 24, Reset: 25, Backlight: 18,
+	Up: 5, Down: 6, Left: 13, Right: 19, A: 26, B: 21, Select: 20, Cancel: 16, Home: 12}
+
+// Line is one wired line: its name in --pins, the GPIO number, and for a button the key
+// code it reports, the one the engine reads as that button (0 for the panel's lines).
+type Line struct {
+	Name string
+	GPIO *int
+	Code uint32
+}
+
+// Key codes of linux/input-event-codes.h the buttons report.
+const (
+	btnDPadUp = 0x220 // BTN_DPAD_UP, then DOWN, LEFT, RIGHT
+	btnSouth  = 0x130 // A
+	btnEast   = 0x131 // B
+	btnSelect = 0x13a
+	btnMode   = 0x13c // Home
+	keyBack   = 158   // Cancel
+)
+
+// Lines lists every line of p, the panel's first, so that they can be set by name.
+func (p *Pins) Lines() []Line {
+	return []Line{
+		{"dc", &p.DC, 0}, {"reset", &p.Reset, 0}, {"backlight", &p.Backlight, 0},
+		{"up", &p.Up, btnDPadUp}, {"down", &p.Down, btnDPadUp + 1}, {"left", &p.Left, btnDPadUp + 2}, {"right", &p.Right, btnDPadUp + 3},
+		{"a", &p.A, btnSouth}, {"b", &p.B, btnEast}, {"select", &p.Select, btnSelect}, {"cancel", &p.Cancel, keyBack}, {"home", &p.Home, btnMode},
+	}
+}
+
+// Check refuses wiring the header cannot have: a line that is not a GPIO of the header,
+// one used twice, one of the SPI bus or of the serial port, or DC not connected.
+func (p Pins) Check() error {
+	if p.DC < 0 {
+		return errors.New("pins: dc must be connected")
+	}
+	used := map[int]string{8: "SPI CE0", 9: "SPI MISO", 10: "SPI MOSI", 11: "SPI SCLK", 14: "the serial port", 15: "the serial port"}
+	for _, l := range p.Lines() {
+		n := *l.GPIO
+		if n < 0 {
+			continue
+		}
+		if n > 27 {
+			return fmt.Errorf("pins: %s=%d is not a GPIO of the 40-pin header (0 to 27)", l.Name, n)
+		}
+		if other, ok := used[n]; ok {
+			return fmt.Errorf("pins: %s=%d is already %s", l.Name, n, other)
+		}
+		used[n] = l.Name
+	}
+	return nil
+}
 
 // DefaultSPISpeed is the SPI clock of the panel, in hertz.
 const DefaultSPISpeed = 32000000
@@ -90,6 +146,12 @@ func ConfigTxt(existing []byte, w *Wiring) []byte {
 	if w.Pins.Backlight >= 0 {
 		gpios += ",backlight-gpio=" + strconv.Itoa(w.Pins.Backlight)
 	}
+	var keys strings.Builder
+	for _, l := range w.Pins.Lines() {
+		if l.Code != 0 && *l.GPIO >= 0 {
+			fmt.Fprintf(&keys, "dtoverlay=gpio-key,gpio=%d,keycode=%d,label=%s\n", *l.GPIO, l.Code, l.Name)
+		}
+	}
 	return []byte(out + blockBegin + "\n" +
 		"[all]\n" +
 		"dtparam=spi=on\n" +
@@ -97,6 +159,7 @@ func ConfigTxt(existing []byte, w *Wiring) []byte {
 		"dtparam=compatible=" + panel.Compatible + `\0panel-mipi-dbi-spi` + "\n" +
 		"dtparam=width=320,height=240\n" +
 		"dtparam=" + gpios + "\n" +
+		keys.String() +
 		blockEnd + "\n")
 }
 

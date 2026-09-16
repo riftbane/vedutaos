@@ -1,10 +1,11 @@
 // Package image builds the VedutaOS image: one FAT32 volume holding the Raspberry Pi boot
-// firmware, the Pi kernels, an initramfs for each with the console in it, and the games.
+// firmware and kernels, Armbian's kernel for the Orange Pi Zero 2W with its U-Boot before
+// the volume (sunxi.go), an initramfs for each kernel with the console in it, and the games.
 // There is no root file system and no distribution: the initramfs is the system, and the
 // dashboard is its init. The same console, in an initramfs for Debian's arm64 kernel,
 // boots on QEMU's virt machine, which is how it is tested.
 //
-// Everything comes from five pinned Debian packages (packages.go), unpacked without
+// Everything comes from seven pinned Debian packages (packages.go), unpacked without
 // installing anything. Building needs xz and mtools, no root and no emulator, and runs on
 // any Linux or macOS machine, or a GitHub Actions runner.
 package image
@@ -115,6 +116,9 @@ func Build(o Options) (Result, error) {
 	if o.Wiring.Pins == (Pins{}) {
 		o.Wiring.Pins = DefaultPins
 	}
+	if err := o.Wiring.Pins.Check(); err != nil {
+		return r, err
+	}
 	if o.Fetch == nil {
 		o.Fetch = httpGet
 	}
@@ -200,6 +204,49 @@ func Build(o Options) (Result, error) {
 		}
 	}
 
+	// The Orange Pi Zero 2W: Armbian's kernel, the board's tree with the console written in,
+	// the initramfs, the boot menu, and U-Boot, which goes before the volume.
+	sunxi := roots[o.Packages.KernelSunxi.Name]
+	smods, err := loadModules(sunxi)
+	if err != nil {
+		return r, err
+	}
+	releases = append(releases, smods.release)
+	fmt.Fprintf(o.Verbose, "%s: %s/Image, its initramfs and %s\n", o.Packages.KernelSunxi.Name, SunxiDir, Zero2WDTB)
+	if err := copyFile(filepath.Join(sunxi, "boot", "vmlinuz-"+smods.release), filepath.Join(stage, SunxiDir, "Image")); err != nil {
+		return r, err
+	}
+	dtb, err := os.ReadFile(filepath.Join(sunxi, "usr", "lib", "linux-image-"+smods.release, "allwinner", Zero2WDTB))
+	if err != nil {
+		return r, err
+	}
+	if dtb, err = Zero2WTree(dtb, o.Wiring); err != nil {
+		return r, err
+	}
+	if err := os.WriteFile(filepath.Join(stage, SunxiDir, Zero2WDTB), dtb, 0o644); err != nil {
+		return r, err
+	}
+	if err := writeInitramfs(filepath.Join(stage, SunxiDir, "initrd.img"), smods, sunxiModules, in); err != nil {
+		return r, fmt.Errorf("%s: %w", o.Packages.KernelSunxi.Name, err)
+	}
+	if err := os.MkdirAll(filepath.Join(stage, "extlinux"), 0o755); err != nil {
+		return r, err
+	}
+	if err := os.WriteFile(filepath.Join(stage, "extlinux", "extlinux.conf"), ExtlinuxConf(), 0o644); err != nil {
+		return r, err
+	}
+	ubootFiles, _ := filepath.Glob(filepath.Join(roots[o.Packages.UBootZero2W.Name], "usr", "lib", "linux-u-boot-*", "u-boot-sunxi-with-spl.bin"))
+	if len(ubootFiles) != 1 {
+		return r, fmt.Errorf("%s: want one u-boot-sunxi-with-spl.bin, found %d", o.Packages.UBootZero2W.Name, len(ubootFiles))
+	}
+	uboot, err := os.ReadFile(ubootFiles[0])
+	if err != nil {
+		return r, err
+	}
+	if err := checkUBoot(uboot); err != nil {
+		return r, err
+	}
+
 	// Debian's kernel, beside the image rather than in it: QEMU boots it directly.
 	virt := roots[o.Packages.KernelVirt.Name]
 	mods, err := loadModules(virt)
@@ -240,7 +287,7 @@ func Build(o Options) (Result, error) {
 	if err := os.MkdirAll(filepath.Join(stage, card.Dir), 0o755); err != nil {
 		return r, err
 	}
-	release := fmt.Sprintf("VedutaOS %s\nkernels %s, %s\nQEMU kernel %s\n", o.Version, releases[0], releases[1], mods.release)
+	release := fmt.Sprintf("VedutaOS %s\nkernels %s, %s\nOrange Pi kernel %s\nQEMU kernel %s\n", o.Version, releases[0], releases[1], releases[2], mods.release)
 	if err := os.WriteFile(filepath.Join(stage, filepath.FromSlash(card.ReleaseFile)), []byte(release), 0o644); err != nil {
 		return r, err
 	}
@@ -249,7 +296,7 @@ func Build(o Options) (Result, error) {
 	r.Image = filepath.Join(o.Out, ImageName)
 	tmp := r.Image + ".part"
 	fmt.Fprintf(o.Verbose, "writing %s (%d MiB, FAT32 %s)\n", r.Image, o.Size>>20, card.BootLabel)
-	if err := writeImage(tmp, o.Size, stage, o.Version); err != nil {
+	if err := writeImage(tmp, o.Size, stage, o.Version, uboot); err != nil {
 		os.Remove(tmp)
 		return r, err
 	}
@@ -259,8 +306,9 @@ func Build(o Options) (Result, error) {
 	return r, nil
 }
 
-// writeImage makes the image file: the partition table, the formatted volume, the files.
-func writeImage(path string, size int64, stage, version string) error {
+// writeImage makes the image file: the partition table, U-Boot for the Allwinner boot ROM
+// in the gap before the partition, the formatted volume, the files.
+func writeImage(path string, size int64, stage, version string, uboot []byte) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -273,6 +321,10 @@ func writeImage(path string, size int64, stage, version string) error {
 	h.Write([]byte(version))
 	sectors := uint32(size / sectorSize)
 	if _, err := f.WriteAt(mbr(sectors, h.Sum32()), 0); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteAt(uboot, ubootOffset); err != nil {
 		f.Close()
 		return err
 	}
