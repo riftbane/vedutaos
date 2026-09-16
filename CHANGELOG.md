@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.5.0-rc.1 — 2026-09-16
+
 Built against engine v2.0.0-rc.2: eight buttons and games written in Lua, which the console
 runs itself. No game ships any more.
 
