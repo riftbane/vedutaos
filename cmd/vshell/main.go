@@ -9,6 +9,9 @@
 //
 // There is one panel and one pad, so the dashboard gives them up while a game is running:
 // it closes its window before launching and opens it again afterwards.
+//
+// A game written in Lua is run by this same program, with the engine it is built with, in a
+// process of its own (vshell play <folder>): a game that fails takes only itself down.
 package main
 
 import (
@@ -22,11 +25,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/riftbane/veduta/gfx"
-	"github.com/riftbane/veduta/gfx/soft"
-	"github.com/riftbane/veduta/platform"
-	"github.com/riftbane/veduta/sim"
-	"github.com/riftbane/veduta/sprite"
+	"github.com/riftbane/veduta/v2/gfx"
+	"github.com/riftbane/veduta/v2/gfx/soft"
+	"github.com/riftbane/veduta/v2/platform"
+	"github.com/riftbane/veduta/v2/script"
+	"github.com/riftbane/veduta/v2/sim"
+	"github.com/riftbane/veduta/v2/sprite"
 	"github.com/riftbane/vedutaos/card"
 	"github.com/riftbane/vedutaos/initramfs"
 	"github.com/riftbane/vedutaos/shell"
@@ -54,7 +58,18 @@ var (
 	tick       = func() {}
 )
 
+// leaveOnClose is whether the player's close (Ctrl+Q, a window's close button, Home on a
+// pad) leaves the dashboard. On the console, where the dashboard is init or init's child,
+// it does not: Home there means the dashboard itself, and switching off is in the menu.
+var leaveOnClose = os.Getpid() != 1 && os.Getppid() != 1
+
+// playCommand is the argument that makes this program play the script game in a folder.
+const playCommand = "play"
+
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == playCommand {
+		os.Exit(script.Run([]string{"-project", os.Args[2]}, os.Stdout, os.Stderr))
+	}
 	if os.Getpid() == 1 {
 		initMain() // never returns
 	}
@@ -193,12 +208,14 @@ func show(dir string, state shell.State) (shell.State, shell.Action, error) {
 		}
 		for _, e := range events {
 			switch e.Kind {
-			case platform.KeyDown:
-				in.KeyDown(e.Code)
-			case platform.KeyUp:
-				in.KeyUp(e.Code)
+			case platform.Press:
+				in.Press(e.Button)
+			case platform.Release:
+				in.Release(e.Button)
 			case platform.Close:
-				return state, shell.Quit, nil
+				if leaveOnClose {
+					return state, shell.Quit, nil
+				}
 			case platform.FocusLost:
 				in.ReleaseAll()
 			}
@@ -285,14 +302,16 @@ func loadIcons(r *soft.Renderer, cards []card.Card) map[string]shell.Icon {
 	return icons
 }
 
-// runGame runs a game and waits for it. The card was written by a PC, where a file has no
-// permission to execute, so the bit is set here rather than asked of the player (on the
-// console the card is FAT, where every file is executable already).
+// runGame runs a game and waits for it: a script game through this program, a program
+// itself. The card was written by a PC, where a file has no permission to execute, so the
+// bit is set here rather than asked of the player (on the console the card is FAT, where
+// every file is executable already).
 func runGame(c card.Card) error {
-	if fi, err := os.Stat(c.Exec); err == nil && fi.Mode().Perm()&0o111 == 0 {
-		os.Chmod(c.Exec, fi.Mode().Perm()|0o755)
+	cmd, err := gameCommand(c)
+	if err != nil {
+		say("game %s: %v", c.Title, err)
+		return err
 	}
-	cmd := exec.Command(c.Exec)
 	cmd.Dir = c.Dir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := startChild(cmd); err != nil {
@@ -300,13 +319,31 @@ func runGame(c card.Card) error {
 		return err
 	}
 	say("game %s started", c.Title)
-	err := waitChild(cmd)
+	err = waitChild(cmd)
 	if err != nil {
 		say("game %s ended: %v", c.Title, err)
 	} else {
 		say("game %s ended", c.Title)
 	}
 	return err
+}
+
+// gameCommand is the process that plays a game.
+func gameCommand(c card.Card) (*exec.Cmd, error) {
+	if c.Script == "" {
+		if fi, err := os.Stat(c.Exec); err == nil && fi.Mode().Perm()&0o111 == 0 {
+			os.Chmod(c.Exec, fi.Mode().Perm()|0o755)
+		}
+		return exec.Command(c.Exec), nil
+	}
+	if c.API > script.APILevel {
+		return nil, fmt.Errorf("the game needs Lua API level %d and this console has %d: update VedutaOS", c.API, script.APILevel)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return exec.Command(self, playCommand, c.Dir), nil
 }
 
 // notice turns a failure into the single line the dashboard has room for.

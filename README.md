@@ -23,12 +23,12 @@ themselves are still to be proved on hardware.
 Download the [latest release](https://github.com/riftbane/vedutaos/releases/latest).
 
 ```sh
-# a Raspberry Pi: write the image; it already holds the demo games (demo, tinycube)
+# a Raspberry Pi: write the image, then put games on its card
 sudo vedutaos flash /dev/sdX            # Windows: Raspberry Pi Imager, "Use custom"
-vedutaos card /media/me/VEDUTAOS --game another-game   # more games, when you have them
+vedutaos card /media/me/VEDUTAOS --game mygame   # a game folder, archive or Veduta project
 
 # an emulated machine on this PC: fetches the kernel and the console once, then boots
-vedutaos qemu --game games/demo --game games/tinycube
+vedutaos qemu --game mygame
 ```
 
 The steps, the panel's wiring and what to check when something is wrong are in
@@ -47,7 +47,7 @@ USB stick labelled `VEDUTA`, which the console takes instead when it is plugged 
 
 | Path | What it is |
 |---|---|
-| `games/<name>/` | one folder per game: its program, its assets, a `card.json` |
+| `games/<name>/` | one folder per game: its program or its Lua scripts, its assets, a `card.json` |
 | `vedutaos/env` | settings overriding the console's (`VEDUTA_SCALE`, `VEDUTA_FB`, `VEDUTA_PAD`), optional |
 | `vedutaos/debug` | while present, a shell on the serial port and on tty2, optional |
 | `vedutaos/vshell` | a dashboard replacing the image's while it is there: how a console is updated from a PC |
@@ -84,6 +84,19 @@ it, and such a folder is passed over rather than shown as broken.
 and a card comes from anywhere. Without `exec`, the build for the board's own architecture
 (`game-arm64`) is preferred, then a plain `game`, so one card can serve two boards.
 
+A game written in Lua has no program. Its `veduta.json` names the main script
+(`"script": "main.lua"`), and the console runs it with the engine it is built with, in a
+process of its own (`vshell play <folder>`); `exec` is not needed. A game whose `"api"` is
+later than the console's Lua API level is listed, and says to update VedutaOS when started.
+
+## The controls
+
+On the dashboard the D-pad moves, A starts the game, and Select opens the menu (A chooses,
+B or Cancel closes it), whose POWER OFF switches the console off. In a game, Home returns
+to the dashboard; on the dashboard it does nothing. A keyboard stands in for the buttons:
+arrows or W A S D, Space or Z for A, X or Shift for B, Enter or Tab for Select, Escape or
+Backspace for Cancel, Ctrl+Q for Home.
+
 ## How the console starts
 
 The Pi firmware loads `kernel8.img` (or `kernel_2712.img` on a Pi 5) and its initramfs
@@ -92,7 +105,7 @@ from the card. The kernel runs `/init`, which is `vshell`: it mounts `/proc`, `/
 or, failing that, `VEDUTAOS`, mounts it read-only on `/boot/firmware`, applies the card's
 settings, takes the framebuffer away from the text console, and shows the dashboard. It
 reaps the processes that come back to it, opens the shells when the card asks, and
-switches the machine off when the dashboard is left. Every step is one line on the kernel
+switches the machine off when the menu's POWER OFF is chosen. Every step is one line on the kernel
 log, which is the serial port.
 
 ## Building and testing

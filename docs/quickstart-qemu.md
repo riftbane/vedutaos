@@ -18,10 +18,8 @@ back, driven from the keyboard. You do not get the SPI panel, which nothing emul
 Download the archive for your PC from the
 [latest release](https://github.com/riftbane/vedutaos/releases/latest):
 `vedutaos_<version>_windows_amd64.zip`, `…_linux_amd64.tar.gz` or `…_linux_arm64.tar.gz`.
-It holds `vedutaos`, `vshell-arm64` (the console program, for updating a card), two games
-built for the console, `games\demo` (the engine's demo) and `games\tinycube` (a creative
-block world: walk or fly, break blocks with X, place them with Y, Select flies, Start picks
-the block), and these guides.
+It holds `vedutaos`, `vshell-arm64` (the console program, for updating a card) and these
+guides. It holds no game: bring yours (`veduta init mygame` makes an empty one).
 
 On Windows, unpack it into a folder of your choosing, for example `C:\vedutaos`. If Windows
 refuses to run a program from it, right-click the zip, choose **Properties**, tick
@@ -34,14 +32,14 @@ vedutaos version
 
 In PowerShell a program in the current folder is started as `.\vedutaos`.
 
-## 3. Boot the console with the demos
+## 3. Boot the console with a game
 
 ```bat
-vedutaos qemu --game games\demo --game games\tinycube
+vedutaos qemu --game mygame
 ```
 
-`--game` also takes another game folder, a release archive, or a Veduta project (built for
-the console, if Go is installed), and can be repeated. From the `vedutaos` source folder,
+`--game` takes a game folder, a release archive, or a Veduta project (a Lua game as it is,
+a Go game built for the console if Go is installed), and can be repeated. From the `vedutaos` source folder,
 `go run ./cmd/vedutaos qemu …` boots `out/vmlinuz` and `out/initrd.img` instead, the
 kernel and console `vedutaos image` built there.
 
@@ -61,12 +59,10 @@ a Mac with Apple silicon, it takes seconds.
 
 ## Using it
 
-- In the QEMU window: arrows or W/S move, Enter or Space start a game, **Ctrl+Q** leaves
-  a game. On the dashboard, Ctrl+Q (or Escape) switches the console off, which ends QEMU.
-- In a game, the keyboard and the mouse stand in for the console's controls: W A S D or
-  the arrows are the D-pad; the mouse pointer is the analog stick (the middle of the window
-  is rest, its edges are the ends); Space, Escape, F and R are A, B, X and Y; Tab and Enter
-  are Select and Start; Ctrl+Q is Home.
+- In the QEMU window the keyboard is the console's buttons: arrows or W A S D the D-pad,
+  Space or Z A, X or Shift B, Enter or Tab Select, Escape or Backspace Cancel, **Ctrl+Q**
+  Home. On the dashboard A starts a game and Select opens the menu, whose POWER OFF
+  switches the console off, which ends QEMU. In a game, Ctrl+Q returns to the dashboard.
 - In the terminal: the console's serial port. The lines `vedutaos: …` say what the console
   did — the modules loaded, the card found, the dashboard, each game started and ended.
   **Ctrl-A x** stops the machine at once.

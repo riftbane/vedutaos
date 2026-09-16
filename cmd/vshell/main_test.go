@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riftbane/veduta/gfx"
-	"github.com/riftbane/veduta/platform"
+	"github.com/riftbane/veduta/v2/gfx"
+	"github.com/riftbane/veduta/v2/platform"
+	"github.com/riftbane/veduta/v2/script"
+	"github.com/riftbane/veduta/v2/sim"
 	"github.com/riftbane/vedutaos/card"
 )
 
@@ -38,14 +40,13 @@ func (f *fakeWindow) Present(img *gfx.Image) error {
 	return nil
 }
 
-func (f *fakeWindow) Size() (int, int)          { return f.w, f.h }
-func (f *fakeWindow) SetPointerLock(bool) error { return nil }
-func (f *fakeWindow) Close() error              { f.closed++; return nil }
+func (f *fakeWindow) Size() (int, int) { return f.w, f.h }
+func (f *fakeWindow) Close() error     { f.closed++; return nil }
 
-func keys(codes ...string) []platform.Event {
-	out := make([]platform.Event, len(codes))
-	for i, c := range codes {
-		out[i] = platform.Event{Kind: platform.KeyDown, Code: c}
+func press(buttons ...sim.Button) []platform.Event {
+	out := make([]platform.Event, len(buttons))
+	for i, b := range buttons {
+		out[i] = platform.Event{Kind: platform.Press, Button: b}
 	}
 	return out
 }
@@ -74,8 +75,8 @@ func TestRunLaunchesAndComesBack(t *testing.T) {
 	// The first batch of every window is empty: a player cannot press anything before the
 	// first frame is on the glass, and the dashboard draws after it has read the input.
 	windows := []*fakeWindow{
-		{w: 320, h: 240, events: [][]platform.Event{keys("ArrowDown"), keys("Space")}},
-		{w: 320, h: 240, events: [][]platform.Event{{}, keys("Escape")}},
+		{w: 320, h: 240, events: [][]platform.Event{press(sim.ButtonDown), press(sim.ButtonA)}},
+		{w: 320, h: 240, events: [][]platform.Event{{}, press(sim.ButtonSelect), press(sim.ButtonA)}},
 	}
 	opened := 0
 	defer swap(&openWindow, func(platform.Options) (platform.Window, error) {
@@ -119,9 +120,9 @@ func TestRunLaunchesAndComesBack(t *testing.T) {
 // rather than taking the console down with it.
 func TestRunReportsAFailedGame(t *testing.T) {
 	dir := gamesDir(t, "broken")
-	second := &fakeWindow{w: 320, h: 240, events: [][]platform.Event{{}, keys("Escape")}}
+	second := &fakeWindow{w: 320, h: 240, events: [][]platform.Event{{}, press(sim.ButtonSelect), press(sim.ButtonA)}}
 	windows := []*fakeWindow{
-		{w: 320, h: 240, events: [][]platform.Event{{}, keys("Space")}},
+		{w: 320, h: 240, events: [][]platform.Event{{}, press(sim.ButtonA)}},
 		second,
 	}
 	opened := 0
@@ -147,7 +148,7 @@ func TestRunReportsAFailedGame(t *testing.T) {
 // TestRunWithoutGames: an empty card shows the dashboard and can still be left.
 func TestRunWithoutGames(t *testing.T) {
 	dir := t.TempDir()
-	w := &fakeWindow{w: 320, h: 240, events: [][]platform.Event{keys("Space"), keys("Escape")}}
+	w := &fakeWindow{w: 320, h: 240, events: [][]platform.Event{press(sim.ButtonA), press(sim.ButtonSelect), {{Kind: platform.Release, Button: sim.ButtonA}}, press(sim.ButtonA)}}
 	defer swap(&openWindow, func(platform.Options) (platform.Window, error) { return w, nil })()
 	defer swap(&launch, func(card.Card) error { t.Error("launched a game that is not there"); return nil })()
 	if err := run(dir); err != nil {
@@ -165,6 +166,46 @@ func TestRunWithoutAGamesDirectory(t *testing.T) {
 	})()
 	if err := run(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("a missing games directory was accepted")
+	}
+}
+
+// TestCloseOnTheConsole: on the console the player's close does not leave the dashboard,
+// elsewhere it does.
+func TestCloseOnTheConsole(t *testing.T) {
+	dir := t.TempDir()
+	closeEv := []platform.Event{{Kind: platform.Close}}
+	w := &fakeWindow{w: 320, h: 240, events: [][]platform.Event{closeEv, press(sim.ButtonSelect), press(sim.ButtonA)}}
+	defer swap(&openWindow, func(platform.Options) (platform.Window, error) { return w, nil })()
+	defer swap(&leaveOnClose, false)()
+	if err := run(dir); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.events) != 0 {
+		t.Fatalf("left the dashboard with %d batches unread: the close was obeyed", len(w.events))
+	}
+	w = &fakeWindow{w: 320, h: 240, events: [][]platform.Event{closeEv, press(sim.ButtonSelect), press(sim.ButtonA)}}
+	leaveOnClose = true
+	if err := run(dir); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.events) != 2 {
+		t.Fatalf("%d batches unread, want the close alone read", len(w.events))
+	}
+}
+
+// TestGameCommand: a program runs itself, a script game runs through this program, and a
+// script game that needs a later API level does not run.
+func TestGameCommand(t *testing.T) {
+	cmd, err := gameCommand(card.Card{Dir: "/g/prog", Exec: "/g/prog/game"})
+	if err != nil || cmd.Path != "/g/prog/game" {
+		t.Fatalf("program: %v %v", cmd, err)
+	}
+	cmd, err = gameCommand(card.Card{Dir: "/g/lua", Script: "/g/lua/main.lua", API: script.APILevel})
+	if err != nil || len(cmd.Args) != 3 || cmd.Args[1] != playCommand || cmd.Args[2] != "/g/lua" {
+		t.Fatalf("script: %v %v", cmd, err)
+	}
+	if _, err := gameCommand(card.Card{Dir: "/g/new", Script: "/g/new/main.lua", API: script.APILevel + 1}); err == nil || notice(err) != "UPDATE VEDUTAOS" {
+		t.Fatalf("a later API level: %v", err)
 	}
 }
 

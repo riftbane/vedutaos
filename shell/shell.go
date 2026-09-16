@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"image"
 
-	"github.com/riftbane/veduta/gfx"
-	"github.com/riftbane/veduta/gmath"
-	"github.com/riftbane/veduta/sim"
-	"github.com/riftbane/veduta/sprite"
+	"github.com/riftbane/veduta/v2/gfx"
+	"github.com/riftbane/veduta/v2/gmath"
+	"github.com/riftbane/veduta/v2/sim"
+	"github.com/riftbane/veduta/v2/sprite"
 	"github.com/riftbane/vedutaos/card"
 )
 
@@ -24,31 +24,59 @@ type Action int
 const (
 	Stay   Action = iota // keep showing the dashboard
 	Launch               // run the selected game
-	Quit                 // leave the dashboard
+	Quit                 // leave the dashboard: on the console, switch it off
 )
 
 // State is everything the dashboard shows.
 type State struct {
-	Cards  []card.Card
-	Sel    int    // index of the selected game
-	Notice string // a line shown at the bottom: why a game did not start, usually
+	Cards   []card.Card
+	Sel     int    // index of the selected game
+	Notice  string // a line shown at the bottom: why a game did not start, usually
+	Menu    bool   // the console's menu is open over the list
+	MenuSel int    // index of the selected entry of the menu
 }
 
-// Step applies one tick of input. The pad arrives as key codes, so the same dashboard is
-// driven by a keyboard on a desktop and by a gamepad on the console.
+// MenuItem is an entry of the console's menu.
+type MenuItem struct {
+	Label  string
+	Action Action
+}
+
+// Menu is what Select opens on the dashboard.
+var Menu = []MenuItem{{"POWER OFF", Quit}}
+
+// Step applies one tick of the console's buttons, the same whether they come from a pad,
+// the handheld's keys or a keyboard. The D-pad moves, A starts the game, Select opens the
+// menu, where A chooses and B, Cancel or Select again close it.
 func Step(s State, in sim.Input) (State, Action) {
+	if s.Menu {
+		n := len(Menu)
+		switch {
+		case in.JustPressed(sim.ButtonDown):
+			s.MenuSel = (s.MenuSel + 1) % n
+		case in.JustPressed(sim.ButtonUp):
+			s.MenuSel = (s.MenuSel + n - 1) % n
+		case in.JustPressed(sim.ButtonA):
+			s.Menu = false
+			return s, Menu[s.MenuSel].Action
+		case in.JustPressed(sim.ButtonB), in.JustPressed(sim.ButtonCancel), in.JustPressed(sim.ButtonSelect):
+			s.Menu = false
+		}
+		return s, Stay
+	}
+	if in.JustPressed(sim.ButtonSelect) {
+		s.Menu, s.MenuSel, s.Notice = true, 0, ""
+		return s, Stay
+	}
 	if n := len(s.Cards); n > 0 {
 		switch {
-		case in.JustPressed("ArrowDown"), in.JustPressed("KeyS"):
+		case in.JustPressed(sim.ButtonDown):
 			s.Sel, s.Notice = (s.Sel+1)%n, ""
-		case in.JustPressed("ArrowUp"), in.JustPressed("KeyW"):
+		case in.JustPressed(sim.ButtonUp):
 			s.Sel, s.Notice = (s.Sel+n-1)%n, ""
-		case in.JustPressed("Space"), in.JustPressed("Enter"):
+		case in.JustPressed(sim.ButtonA):
 			return s, Launch
 		}
-	}
-	if in.JustPressed("Escape") {
-		return s, Quit
 	}
 	if s.Sel >= len(s.Cards) {
 		s.Sel = 0
@@ -132,11 +160,41 @@ func Draw(b *sprite.Batch, r Resources, w, h int, s State) {
 		b.Text(r.Font, r.FontTex, float32((w-len(msg)*cell)/2), float32(h/2-cell/2), scale, msg, colDim)
 	}
 	notice := s.Notice
-	if notice == "" && len(s.Cards) > 0 {
-		notice = "A: PLAY   SELECT+START: EXIT"
+	switch {
+	case s.Menu:
+		notice = "A: OK   B: BACK"
+	case notice == "" && len(s.Cards) > 0:
+		notice = "A: PLAY   SELECT: MENU"
+	case notice == "":
+		notice = "SELECT: MENU"
 	}
-	if notice != "" {
-		b.Text(r.Font, r.FontTex, float32(pad), float32(h-pad-cell), scale, clip(notice, (w-2*pad)/cell), colNotice)
+	b.Text(r.Font, r.FontTex, float32(pad), float32(h-pad-cell), scale, clip(notice, (w-2*pad)/cell), colNotice)
+	if s.Menu {
+		drawMenu(b, r, w, h, scale, s.MenuSel)
+	}
+}
+
+// drawMenu paints the menu as a box in the middle of the list.
+func drawMenu(b *sprite.Batch, r Resources, w, h, scale, sel int) {
+	cell := 8 * scale
+	pad := 4 * scale
+	rowH := cell + 2*scale
+	widest := len("MENU")
+	for _, it := range Menu {
+		widest = max(widest, len(it.Label))
+	}
+	bw := widest*cell + 4*pad
+	bh := cell + pad + len(Menu)*rowH + 2*pad
+	x, y := (w-bw)/2, (h-bh)/2
+	b.Rect(gmath.R(float32(x-scale), float32(y-scale), float32(bw+2*scale), float32(bh+2*scale)), colHeader)
+	b.Rect(gmath.R(float32(x), float32(y), float32(bw), float32(bh)), colBackground)
+	b.Text(r.Font, r.FontTex, float32(x+2*pad), float32(y+pad), scale, "MENU", colHeader)
+	for i, it := range Menu {
+		ry := y + pad + cell + pad + i*rowH
+		if i == sel {
+			b.Rect(gmath.R(float32(x+pad), float32(ry-scale), float32(bw-2*pad), float32(rowH)), colSelected)
+		}
+		b.Text(r.Font, r.FontTex, float32(x+2*pad), float32(ry), scale, it.Label, colText)
 	}
 }
 

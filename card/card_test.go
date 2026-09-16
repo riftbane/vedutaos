@@ -156,6 +156,41 @@ func TestScanRefusesToLeaveTheFolder(t *testing.T) {
 	}
 }
 
+// TestScanScriptGames: a folder whose veduta.json names a script that is there is a Lua game,
+// even with no program and a card.json that names one; a script outside the folder, or
+// missing, makes nothing a game.
+func TestScanScriptGames(t *testing.T) {
+	root := games(t,
+		`lua|{"veduta":"card/1","title":"Lua","exec":"lua"}|main.lua`,
+		"api||main.lua",
+		"outside||main.lua",
+		"missing||",
+	)
+	for dir, manifest := range map[string]string{
+		"lua":     `{"veduta": "project/1", "name": "lua", "engine": "v2.0.0", "script": "main.lua", "future": true}`,
+		"api":     `{"script": "main.lua", "api": 3}`,
+		"outside": `{"script": "../lua/main.lua"}`,
+		"missing": `{"script": "main.lua"}`,
+	} {
+		if err := os.WriteFile(filepath.Join(root, dir, "veduta.json"), []byte(manifest), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cards, err := Scan(root)
+	if err != nil || len(cards) != 2 {
+		t.Fatalf("scan: %+v %v", cards, err)
+	}
+	for i, want := range []struct {
+		title string
+		api   int
+	}{{"Lua", 1}, {"api", 3}} {
+		c := cards[i]
+		if c.Title != want.title || c.Script != filepath.Join(c.Dir, "main.lua") || c.Exec != "" || c.API != want.api || c.Problem != "" && want.title == "Lua" {
+			t.Errorf("card %d: %+v, want %s at API %d", i, c, want.title, want.api)
+		}
+	}
+}
+
 func TestScanMissingDirectory(t *testing.T) {
 	if _, err := Scan(filepath.Join(t.TempDir(), "nope")); err == nil {
 		t.Fatal("a missing games directory was accepted")

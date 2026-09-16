@@ -11,6 +11,10 @@
 // engine; this one never changes, so a console can still list a game written years
 // earlier. And a folder whose description is missing or damaged is still listed and still
 // launched if something in it can run: never hide a game that could be played.
+//
+// A game written in Lua has no program: its veduta.json names the main script, and the
+// console runs it with the engine it carries. Such a folder is a game whatever its card.json
+// says about a program.
 package card
 
 import (
@@ -36,7 +40,9 @@ type Card struct {
 	Title   string // what the dashboard shows; the folder name when nothing better is known
 	Name    string // identifier from the description, empty when there is none
 	Version string // version from the description, empty when there is none
-	Exec    string // the executable to run
+	Exec    string // the executable to run, empty for a script game
+	Script  string // the main script of a Lua game, which the console runs; empty for a program
+	API     int    // the Lua API level a script game needs
 	Icon    string // the picture to show, empty when the folder has none
 	Problem string // why the description was not used, empty when all is well
 }
@@ -97,7 +103,9 @@ func load(dir, base, goarch string) (Card, bool) {
 		}
 		c.Name, c.Version = src.Name, src.Version
 	}
-	if exec, ok := findExec(dir, src.Exec, goarch); ok {
+	if script, api, ok := findScript(dir); ok {
+		c.Script, c.API = script, api
+	} else if exec, ok := findExec(dir, src.Exec, goarch); ok {
 		c.Exec = exec
 	} else {
 		return Card{}, false // nothing to launch: this is not a game
@@ -145,6 +153,28 @@ func findExec(dir, named, goarch string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// findScript reports the main script a folder's veduta.json names, and the API level it
+// asks for (1 when it names none). The engine's manifest is read leniently: it grows fields
+// this package need not know.
+func findScript(dir string) (string, int, bool) {
+	data, err := os.ReadFile(filepath.Join(dir, "veduta.json"))
+	if err != nil {
+		return "", 0, false
+	}
+	var m struct {
+		Script string `json:"script"`
+		API    int    `json:"api"`
+	}
+	if json.Unmarshal(data, &m) != nil || m.Script == "" || !filepath.IsLocal(filepath.FromSlash(m.Script)) {
+		return "", 0, false
+	}
+	p := filepath.Join(dir, filepath.FromSlash(m.Script))
+	if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
+		return "", 0, false
+	}
+	return p, max(m.API, 1), true
 }
 
 func findIcon(dir, named string) (string, bool) {

@@ -39,7 +39,7 @@ jobs:
       - name: no third-party modules
         run: |
           # Only the engine may appear: the console is standard library plus Veduta.
-          if grep -v '^github.com/riftbane/veduta ' go.sum | grep -q .; then
+          if grep -v '^github.com/riftbane/veduta/v2 ' go.sum | grep -q .; then
             echo "go.sum names something other than the engine:"; cat go.sum; exit 1
           fi
 

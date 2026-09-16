@@ -1,8 +1,9 @@
 //go:build linux
 
 // Package e2e boots the console on QEMU and drives it as a player would: init brings the
-// dashboard up, the dashboard lists the card's game, starts it on A, comes back on Home,
-// and switches the machine off when it is left. The console says what it does on the
+// dashboard up, the dashboard lists the card's game (an empty Lua game, made by the engine's
+// veduta init), starts it on A, comes back on Home, and switches the machine off from the
+// menu Select opens. The console says what it does on the
 // serial port, and that is what the test reads. It is the test of the image itself, so it
 // runs only when asked:
 //
@@ -71,11 +72,12 @@ func TestConsole(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("building the tool: %v\n%s", err, out)
 	}
-	engine, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/riftbane/veduta").Output()
-	if err != nil {
-		t.Fatalf("finding the engine: %v", err)
+	// The game is made here, by the engine this repository builds against: nothing on the
+	// card is committed.
+	game := filepath.Join(work, "probe")
+	if out, err := exec.Command("go", "run", "github.com/riftbane/veduta/v2/cmd/veduta", "init", game).CombinedOutput(); err != nil {
+		t.Fatalf("making the game: %v\n%s", err, out)
 	}
-	demo := filepath.Join(strings.TrimSpace(string(engine)), "template")
 	monitor := filepath.Join(work, "monitor.sock")
 	logf, err := os.Create(filepath.Join(work, "serial.log"))
 	if err != nil {
@@ -85,7 +87,7 @@ func TestConsole(t *testing.T) {
 
 	// The tool makes the card and boots the console as it would for a person, with the
 	// screen and the monitor moved where the test can reach them.
-	c.qemu = exec.Command(tool, "qemu", "--kernel", kernel, "--card", filepath.Join(work, "card"), "--game", demo,
+	c.qemu = exec.Command(tool, "qemu", "--kernel", kernel, "--card", filepath.Join(work, "card"), "--game", game,
 		"--", "-display", "none", "-monitor", "unix:"+monitor+",server,nowait")
 	c.qemu.Env = append(os.Environ(), "XDG_CACHE_HOME="+filepath.Join(work, "cache"), "HOME="+work)
 	c.qemu.Stdout, c.qemu.Stderr = logf, logf
@@ -126,10 +128,15 @@ func TestConsole(t *testing.T) {
 	// the emulated keyboard drops one now and then.
 	c.press("spc", 2*time.Minute, "the game to start", `vedutaos: game \S+ started`, 1)
 	time.Sleep(5 * time.Second)
-	if game := c.screen(); same(game, list) {
-		c.save("game.got", game)
+	if regexp.MustCompile(`vedutaos: game \S+ ended`).MatchString(c.log()) {
+		t.Fatal("the game ended by itself")
+	}
+	playing := c.screen()
+	if same(playing, list) {
+		c.save("game.got", playing)
 		t.Error("the screen did not change when the game started")
 	}
+	c.golden("game", playing)
 
 	// Home ends it; the dashboard is back as it was.
 	c.press("ctrl-q", 2*time.Minute, "the game to end", `vedutaos: game \S+ ended`, 1)
@@ -137,8 +144,30 @@ func TestConsole(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	c.golden("list", c.screen())
 
-	// Leaving the dashboard switches the console off, and the machine with it.
-	c.press("esc", 2*time.Minute, "the console to switch off", `vedutaos: power off`, 1)
+	// Home does nothing on the dashboard: on the console it means the dashboard itself.
+	c.key("ctrl-q")
+	time.Sleep(5 * time.Second)
+	if !same(c.screen(), list) {
+		t.Fatal("Home changed the dashboard")
+	}
+
+	// Select (Enter) opens the menu; its POWER OFF, on A, switches the console off, and the
+	// machine with it.
+	last := time.Now()
+	c.key("ret")
+	c.waitFor(2*time.Minute, "the menu", func() bool {
+		if !same(c.screen(), list) {
+			return true
+		}
+		if time.Since(last) > 15*time.Second { // the emulated keyboard dropped it
+			c.key("ret")
+			last = time.Now()
+		}
+		return false
+	})
+	time.Sleep(time.Second)
+	c.golden("menu", c.screen())
+	c.press("spc", 2*time.Minute, "the console to switch off", `vedutaos: power off`, 1)
 	select {
 	case <-c.done:
 		if c.exit != nil {

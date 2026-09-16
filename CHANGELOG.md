@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+Built against engine v2.0.0-rc.2: eight buttons and games written in Lua, which the console
+runs itself. No game ships any more.
+
+### Added
+
+- Lua games: a folder whose `veduta.json` names a `script` is a game with no program. The
+  dashboard lists it and runs it with the engine it is built with, as `vshell play
+  <folder>` in a process of its own; a game asking for a later Lua API level than the
+  console's is refused with "UPDATE VEDUTAOS". `vedutaos card`, `image` and `qemu --game`
+  put a Lua project on the card as it is (scripts, manifest, card, icon, assets without the
+  cooked files), with no Go, and list it as `Lua`.
+- The dashboard's menu: Select opens it, A chooses, B, Cancel or Select close it. Its one
+  entry, POWER OFF, switches the console off.
+
+### Changed
+
+- The dashboard reads the console's buttons: the D-pad moves, A starts the game. Home does
+  nothing on the console's dashboard (it means the dashboard itself); off the console the
+  player's close still leaves it. The footer says `A: PLAY   SELECT: MENU`.
+- The image and the release archives carry no game: the engine's demo and TinyCube are gone,
+  with `.github/demos.env`.
+- The end-to-end test makes an empty Lua game with the engine's `veduta init`, plays it on
+  QEMU (its screen is a golden now), checks Home leaves the dashboard alone, and switches
+  off from the menu.
+
+### Verified
+
+- `go test ./...`; an image built locally (`vedutaos image`, initrd 4.4 MB);
+  `VEDUTAOS_E2E=1 go test ./test/e2e` passes (36 s): the Lua game runs until Home.
+
 ## v0.4.0 — 2026-09-16
 
 TinyCube joins the engine's demo: a creative block world (five blocks, walking and flying,

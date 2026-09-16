@@ -19,18 +19,17 @@ The image is 2 GB: one FAT32 volume. A larger card's remaining space is simply n
 
 ## 2. Put a game on the card
 
-The image already holds two games, `demo` (the engine's demo) and `tinycube` (a creative
-block world): a card written with it plays at once, and this step is for adding more.
+The image holds no game.
 
 Take the card out and put it back in. The PC shows it as a drive named `VEDUTAOS`
 (`E:` on Windows). Then:
 
 ```bat
-vedutaos card E:\ --game games\demo
+vedutaos card E:\ --game mygame
 ```
 
-`--game` takes a game folder, a release archive (`gems_v1.2.0_linux_arm64.tar.gz`) or a
-Veduta project (built for the console, which needs Go), and can be repeated. Dragging a
+`--game` takes a game folder, a release archive (`gems_v1.2.0.tar.gz`) or a Veduta project
+(a Lua game as it is, a Go game built for the console, which needs Go), and can be repeated. Dragging a
 game's folder into `games` does the same. `vedutaos` lists the games as the dashboard will.
 
 Other things a card can carry, each written only when asked:
@@ -42,9 +41,9 @@ Other things a card can carry, each written only when asked:
 
 ## 3. Switch it on
 
-The dashboard appears on the panel within seconds. Arrows or the D-pad move, A starts a
-game, Home (or Select and Start together) returns to the dashboard; on the dashboard it
-switches the console off. The card is never written, so the power can be cut at any time.
+The dashboard appears on the panel within seconds. The D-pad moves, A starts a game, Home
+(or Select and Start together on a pad without Home) returns to the dashboard, and Select
+on the dashboard opens the menu, whose POWER OFF switches the console off. The card is never written, so the power can be cut at any time.
 
 A USB stick labelled `VEDUTA` with a `games` folder on it is a card too: plugged in at
 start, the console lists its games instead of the SD card's.

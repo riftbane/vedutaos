@@ -4,7 +4,8 @@
 //     copied as it is;
 //   - a release archive, <name>_<tag>_linux_arm64.tar.gz (or a .zip of a game folder),
 //     unpacked;
-//   - a Veduta project, built for the console the way its release workflow builds it.
+//   - a Veduta project, built for the console the way its release workflow builds it: a Go
+//     game compiled, a Lua game's scripts copied, since the console runs them itself.
 //
 // A game replaces the folder of the same name and nothing else; the card's other games are
 // left alone.
@@ -121,44 +122,64 @@ func safeName(s string) bool {
 type manifest struct {
 	Name   string `json:"name"`
 	Entry  string `json:"entry"`
+	Script string `json:"script"`
 	Icon   string `json:"icon"`
 	Assets string `json:"assets"`
 	Cooked string `json:"cooked"`
 }
 
 // project reports whether dir is a Veduta project: a veduta.json whose entry is a package
-// inside the folder. A game folder carries veduta.json too, but no source.
+// inside the folder, or whose script is a file inside it. A Go game's folder carries
+// veduta.json too, but no source; a Lua game's folder is its project without the tests,
+// and staging it again gives the same folder.
 func project(dir string) (manifest, bool) {
 	data, err := os.ReadFile(filepath.Join(dir, "veduta.json"))
 	if err != nil {
 		return manifest{}, false
 	}
 	var m manifest
-	if json.Unmarshal(data, &m) != nil || m.Entry == "" || !filepath.IsLocal(filepath.FromSlash(m.Entry)) {
+	if json.Unmarshal(data, &m) != nil {
 		return manifest{}, false
 	}
-	fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(m.Entry)))
-	if err != nil || !fi.IsDir() {
+	target, isDir := m.Entry, true
+	if m.Script != "" {
+		target, isDir = m.Script, false
+	}
+	if target == "" || !filepath.IsLocal(filepath.FromSlash(target)) {
+		return manifest{}, false
+	}
+	fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(target)))
+	if err != nil || fi.IsDir() != isDir {
 		return manifest{}, false
 	}
 	if m.Assets == "" {
 		m.Assets = "assets"
 	}
+	if m.Cooked == "" {
+		m.Cooked = "assets/.cooked" // the engine's default
+	}
 	return m, true
 }
 
 // buildProject stages a project as its release workflow does: the program named after the
-// game, veduta.json, README.md, card.json, icon.png, and the assets without cooked files.
+// game (or a Lua game's scripts), veduta.json, README.md, card.json, icon.png, and the assets
+// without cooked files.
 func buildProject(dir string, m manifest, dst string, build Builder) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
 	}
-	entry := m.Entry
-	if !strings.HasPrefix(entry, "./") && !strings.HasPrefix(entry, "../") {
-		entry = "./" + entry
-	}
-	if err := build(dir, entry, filepath.Join(dst, m.Name)); err != nil {
-		return err
+	if m.Script != "" {
+		if err := copyScripts(dir, dst); err != nil {
+			return err
+		}
+	} else {
+		entry := m.Entry
+		if !strings.HasPrefix(entry, "./") && !strings.HasPrefix(entry, "../") {
+			entry = "./" + entry
+		}
+		if err := build(dir, entry, filepath.Join(dst, m.Name)); err != nil {
+			return err
+		}
 	}
 	for _, f := range []string{"veduta.json", "README.md"} {
 		if err := copyFile(filepath.Join(dir, f), filepath.Join(dst, f), 0o644); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -206,7 +227,7 @@ func cardFor(dir string, m manifest) ([]byte, error) {
 	default:
 		return nil, err
 	}
-	if _, ok := desc["exec"]; !ok {
+	if _, ok := desc["exec"]; !ok && m.Script == "" {
 		desc["exec"] = m.Name
 	}
 	if m.Icon != "" {
@@ -220,6 +241,33 @@ func cardFor(dir string, m manifest) ([]byte, error) {
 		return nil, err
 	}
 	return b.Bytes(), nil
+}
+
+// copyScripts copies every .lua file of a project to dst at the same place, leaving out
+// hidden folders and the build's own (out, bin, build).
+func copyScripts(dir, dst string) error {
+	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); p != dir && (strings.HasPrefix(n, ".") || n == "out" || n == "bin" || n == "build") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".lua") {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s: links and devices do not belong on a card", p)
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		return copyFile(p, filepath.Join(dst, rel), 0o644)
+	})
 }
 
 // fromTar opens a release archive: one folder at the top, holding the game.

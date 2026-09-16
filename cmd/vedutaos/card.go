@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/riftbane/veduta/v2/script"
 	"github.com/riftbane/vedutaos/card"
 	"github.com/riftbane/vedutaos/image"
 	"github.com/riftbane/vedutaos/install"
@@ -158,9 +159,14 @@ func describe(out io.Writer, dir string) error {
 	for _, c := range cards {
 		rel, _ := filepath.Rel(dir, c.Dir)
 		note := ""
-		if arch, err := install.Arch(c.Exec); err != nil {
+		switch arch, err := install.Arch(c.Exec); {
+		case c.Script != "" && c.API > script.APILevel:
+			note = fmt.Sprintf("  ! needs Lua API level %d, this VedutaOS has %d", c.API, script.APILevel)
+		case c.Script != "":
+			note = "  Lua"
+		case err != nil:
 			note = "  ! " + err.Error()
-		} else if arch != "arm64" {
+		case arch != "arm64":
 			note = "  ! built for " + arch + ", the console cannot run it"
 		}
 		if c.Problem != "" {

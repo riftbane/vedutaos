@@ -237,6 +237,55 @@ func TestProject(t *testing.T) {
 	}
 }
 
+// A Lua project is staged without a build: its scripts where they are, its manifest, card,
+// icon and assets. Staging the result again gives the same folder.
+func TestScriptProject(t *testing.T) {
+	proj := t.TempDir()
+	write(t, proj,
+		`veduta.json={"veduta":"project/1","name":"lua","engine":"v2.0.0","script":"main.lua","icon":"icon.png"}`,
+		"main.lua=game = {}",
+		"lib/util.lua=return {}",
+		"out/tmp.lua=junk",
+		".git/hook.lua=junk",
+		"tests/scenarios/start.scenario.json={}",
+		"assets/scenes/main.json={}",
+		"assets/.cooked/main.vda=cooked",
+		"icon.png=png",
+		`card.json={"veduta":"card/1","title":"Lua","name":"lua","exec":"lua"}`,
+	)
+	games := t.TempDir()
+	build := func(string, string, string) error { t.Error("a Lua game was built"); return nil }
+	if _, err := Game(games, proj, build); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"lua/assets/scenes/main.json={}", "lua/card.json", "lua/icon.png=png", "lua/lib/util.lua=return {}", "lua/main.lua=game = {}", "lua/veduta.json"}
+	check := func(what string) {
+		t.Helper()
+		var got []string
+		for _, f := range tree(t, games) {
+			if name, _, _ := strings.Cut(f, "="); name == "lua/card.json" || name == "lua/veduta.json" {
+				f = name
+			}
+			got = append(got, f)
+		}
+		sort.Strings(got)
+		same(t, got, want)
+		cards, err := card.ScanFor(games, "arm64")
+		if err != nil || len(cards) != 1 || cards[0].Problem != "" || cards[0].Title != "Lua" || filepath.Base(cards[0].Script) != "main.lua" {
+			t.Fatalf("%s: the console would list %+v (%v)", what, cards, err)
+		}
+	}
+	check("the project")
+	again := t.TempDir()
+	if err := os.Rename(filepath.Join(games, "lua"), filepath.Join(again, "lua")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Game(games, filepath.Join(again, "lua"), build); err != nil {
+		t.Fatal(err)
+	}
+	check("the game folder")
+}
+
 func TestProjectKeepsItsOwnCard(t *testing.T) {
 	proj := t.TempDir()
 	write(t, proj,

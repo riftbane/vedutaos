@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/riftbane/veduta/gfx"
-	"github.com/riftbane/veduta/gfx/soft"
-	"github.com/riftbane/veduta/sprite"
+	"github.com/riftbane/veduta/v2/gfx"
+	"github.com/riftbane/veduta/v2/gfx/soft"
+	"github.com/riftbane/veduta/v2/sprite"
 	"github.com/riftbane/vedutaos/card"
 )
 
@@ -97,8 +97,8 @@ func games(titles ...string) []card.Card {
 }
 
 // TestDrawGolden pins what the panel shows in the cases that matter: an empty card, one
-// game, a full list, a list longer than the panel, a title too long for it, and a game
-// whose description was damaged.
+// game, a full list, a list longer than the panel, a title too long for it, a game whose
+// description was damaged, a notice, and the menu.
 func TestDrawGolden(t *testing.T) {
 	// More games than the panel can show at once, so the scrolling case really scrolls.
 	titles := make([]string, 30)
@@ -120,6 +120,7 @@ func TestDrawGolden(t *testing.T) {
 		{"long-title", State{Cards: games("A Title Far Too Long For This Little Panel")}},
 		{"damaged", State{Cards: broken, Sel: 1}},
 		{"notice", State{Cards: games("Cave of Gems"), Notice: "GAME STOPPED: EXIT CODE 2"}},
+		{"menu", State{Cards: games("Cave of Gems", "Sky Race", "Tunnel"), Sel: 1, Menu: true}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			golden(t, c.name, render(t, 320, 240, c.s, nil))
