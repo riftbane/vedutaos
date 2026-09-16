@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.5.0-rc.2 — 2026-09-16
+
+- Built against engine v2.0.0-rc.3: a Lua game on the console can build models at runtime
+  (`mesh`, `volume`). `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass on an
+  image built locally.
+
 ## v0.5.0-rc.1 — 2026-09-16
 
 Built against engine v2.0.0-rc.2: eight buttons and games written in Lua, which the console
