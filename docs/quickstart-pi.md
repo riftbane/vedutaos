@@ -69,11 +69,12 @@ The buttons, each between its pin and ground, are wired as on the Orange Pi Zero
 header is the same ([the table](quickstart-orangepi.md#2-wiring)): Up GPIO 5, Down 6, Left
 13, Right 19, A 26, B 21, Select 20, Cancel 16, Home 12.
 
-Wired differently, or with a panel that needs other settings, edit the marked block at the
-end of `config.txt` on the card (`dtparam=reset-gpio=…,dc-gpio=…,backlight-gpio=…`,
-`speed=…`, a `dtoverlay=gpio-key,…` line per button), or build an image with them:
+Wired differently, or with a panel that needs other settings, build an image with them:
 `vedutaos image --pins dc=22,reset=27,backlight=none,a=17 --rotate 270 --rgb --invert
---spi-speed 16000000`. Without a panel there is no picture: the
+--spi-speed 16000000`. The panel's settings can also be edited in the marked block at the
+end of `config.txt` on the card (`dtparam=reset-gpio=…,dc-gpio=…,backlight-gpio=…`,
+`speed=…`); the buttons' pins are written into `overlays/vedutaos-buttons.dtbo` (one
+gpio-keys device with every button), so other button pins take a new image. Without a panel there is no picture: the
 image loads no HDMI driver.
 
 ## When something is wrong

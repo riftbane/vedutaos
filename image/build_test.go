@@ -30,7 +30,7 @@ func TestBuild(t *testing.T) {
 		served[url] = deb
 		return Package{Name: name, Version: "1", URLs: []string{url}, SHA256: sumOf(deb)}
 	}
-	pi := map[string][]string{"panel_mipi_dbi": {"drm"}, "drm": nil, "spi_bcm2835": nil, "spi_dw_mmio": {"spi_dw"}, "spi_dw": nil, "gpio_backlight": nil, "pwm_bl": nil}
+	pi := map[string][]string{"panel_mipi_dbi": {"drm"}, "drm": nil, "spi_bcm2835": nil, "spi_dw_mmio": {"spi_dw"}, "spi_dw": nil, "gpio_backlight": nil, "pwm_bl": nil, "gpio_keys": nil}
 	piBuiltin := []string{"vfat", "nls_cp437", "nls_ascii", "xhci_pci", "usbhid", "hid_generic", "evdev"}
 	pkgs := Packages{
 		Firmware:   pin("raspi-firmware", map[string][]byte{"usr/lib/raspi-firmware/start.elf": []byte("start"), "usr/lib/raspi-firmware/bootcode.bin": []byte("boot"), "usr/lib/raspi-firmware/fixup.dat": []byte("fix")}),
@@ -89,7 +89,7 @@ func TestBuild(t *testing.T) {
 	for _, p := range paths {
 		have[strings.ToLower(p)] = true
 	}
-	for _, want := range []string{"/kernel8.img", "/initramfs8", "/kernel_2712.img", "/initramfs_2712", "/config.txt", "/cmdline.txt", "/start.elf", "/bootcode.bin", "/bcm2710-x.dtb", "/overlays/mipi-dbi-spi.dtbo", "/vedutaos/release",
+	for _, want := range []string{"/kernel8.img", "/initramfs8", "/kernel_2712.img", "/initramfs_2712", "/config.txt", "/cmdline.txt", "/start.elf", "/bootcode.bin", "/bcm2710-x.dtb", "/overlays/mipi-dbi-spi.dtbo", "/overlays/vedutaos-buttons.dtbo", "/vedutaos/release",
 		"/extlinux/extlinux.conf", "/sunxi/image", "/sunxi/initrd.img", "/sunxi/" + Zero2WDTB,
 		"/games/cube/card.json", "/games/cube/cube", "/games/cube/assets/x.json"} {
 		if !have[want] {
@@ -193,7 +193,7 @@ func TestBuild(t *testing.T) {
 			piFiles[e.Name] = true
 		}
 	}
-	for _, want := range []string{"panel_mipi_dbi", "drm", "spi_bcm2835", "spi_dw_mmio", "spi_dw", "init"} {
+	for _, want := range []string{"panel_mipi_dbi", "drm", "spi_bcm2835", "spi_dw_mmio", "spi_dw", "gpio_keys", "init"} {
 		if !piFiles[want] {
 			t.Errorf("initramfs8 lacks %s", want)
 		}

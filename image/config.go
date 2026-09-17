@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/riftbane/vedutaos/fdt"
 	"github.com/riftbane/vedutaos/panel"
 )
 
@@ -146,11 +147,9 @@ func ConfigTxt(existing []byte, w *Wiring) []byte {
 	if w.Pins.Backlight >= 0 {
 		gpios += ",backlight-gpio=" + strconv.Itoa(w.Pins.Backlight)
 	}
-	var keys strings.Builder
-	for _, l := range w.Pins.Lines() {
-		if l.Code != 0 && *l.GPIO >= 0 {
-			fmt.Fprintf(&keys, "dtoverlay=gpio-key,gpio=%d,keycode=%d,label=%s\n", *l.GPIO, l.Code, l.Name)
-		}
+	keys := ""
+	if len(w.Pins.buttons()) > 0 {
+		keys = "dtoverlay=" + ButtonsOverlay + "\n"
 	}
 	return []byte(out + blockBegin + "\n" +
 		"[all]\n" +
@@ -159,8 +158,69 @@ func ConfigTxt(existing []byte, w *Wiring) []byte {
 		"dtparam=compatible=" + panel.Compatible + `\0panel-mipi-dbi-spi` + "\n" +
 		"dtparam=width=320,height=240\n" +
 		"dtparam=" + gpios + "\n" +
-		keys.String() +
+		keys +
 		blockEnd + "\n")
+}
+
+// ButtonsOverlay names the overlay of the buttons on the Raspberry Pis, in overlays/ on the
+// card.
+const ButtonsOverlay = "vedutaos-buttons"
+
+// buttons returns the buttons that are connected.
+func (p *Pins) buttons() []Line {
+	var b []Line
+	for _, l := range p.Lines() {
+		if l.Code != 0 && *l.GPIO >= 0 {
+			b = append(b, l)
+		}
+	}
+	return b
+}
+
+// ButtonsDTBO returns the Raspberry Pi overlay of the buttons: one gpio-keys device holding
+// every connected button, pulled up and active low, as on the Orange Pi (Zero2WTree). The
+// stock gpio-key overlay makes a device per button, and a device with a single button
+// other than A or Up does not look like a pad, so the player would not read it. The
+// overlay refers to the board's GPIO controller by its label, gpio, which every Pi's tree
+// has (on the Pi 5 it is RP1's, whose driver reads the same brcm,* pin properties).
+func ButtonsDTBO(p Pins) []byte {
+	const gpioPhandle = 0xffffffff // resolved through __fixups__
+	t := &fdt.Tree{Root: &fdt.Node{}}
+	root := t.Root
+	root.Set("compatible", fdt.Strings("brcm,bcm2835"))
+
+	var pins, functions, pulls []uint32
+	buttons := p.buttons()
+	for _, l := range buttons {
+		pins = append(pins, uint32(*l.GPIO))
+		functions = append(functions, 0) // input
+		pulls = append(pulls, 2)         // up
+	}
+	pull := root.Add("fragment@0")
+	pull.Set("target", fdt.Cells(gpioPhandle))
+	pinNode := pull.Add("__overlay__").Add("vedutaos-keys-pins")
+	pinNode.Set("brcm,pins", fdt.Cells(pins...))
+	pinNode.Set("brcm,function", fdt.Cells(functions...))
+	pinNode.Set("brcm,pull", fdt.Cells(pulls...))
+	pinNode.Set("phandle", fdt.Cells(1))
+
+	keysFragment := root.Add("fragment@1")
+	keysFragment.Set("target-path", fdt.Strings("/"))
+	keys := keysFragment.Add("__overlay__").Add("vedutaos-keys")
+	keys.Set("compatible", fdt.Strings("gpio-keys"))
+	keys.Set("pinctrl-names", fdt.Strings("default"))
+	keys.Set("pinctrl-0", fdt.Cells(1))
+	gpioUsers := []string{"/fragment@0:target:0"}
+	for _, l := range buttons {
+		b := keys.Add("button-" + l.Name)
+		b.Set("label", fdt.Strings(l.Name))
+		b.Set("linux,code", fdt.Cells(l.Code))
+		b.Set("gpios", fdt.Cells(gpioPhandle, uint32(*l.GPIO), gpioActiveLow))
+		gpioUsers = append(gpioUsers, "/fragment@1/__overlay__/vedutaos-keys/button-"+l.Name+":gpios:0")
+	}
+	root.Add("__fixups__").Set("gpio", fdt.Strings(gpioUsers...))
+	root.Add("__local_fixups__").Add("fragment@1").Add("__overlay__").Add("vedutaos-keys").Set("pinctrl-0", fdt.Cells(0))
+	return t.Bytes()
 }
 
 // CmdlineSettings are the kernel settings the console needs on every machine: no blinking

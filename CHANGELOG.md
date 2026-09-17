@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v0.5.0-rc.3 — 2026-09-17
+
+### Fixed
+
+- The buttons on the Raspberry Pis. `gpio_keys` is a module on the Pi kernels and was not
+  in their initramfs, so no button reached the console. And the stock `gpio-key` overlay,
+  once per button, made nine input devices of one button each, most of which the player
+  does not read as a pad; the image now writes `overlays/vedutaos-buttons.dtbo`, one
+  gpio-keys device with every connected button, as on the Orange Pi, and `config.txt`
+  loads it. Checked with `fdtoverlay` on the Pi 5's, Pi 4's and Zero 2 W's trees of the
+  pinned kernel.
+
 ## v0.5.0-rc.2 — 2026-09-16
 
 - Built against engine v2.0.0-rc.3: a Lua game on the console can build models at runtime

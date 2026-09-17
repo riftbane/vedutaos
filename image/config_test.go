@@ -2,8 +2,13 @@ package image
 
 import (
 	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/riftbane/vedutaos/fdt"
 )
 
 func wired() *Wiring { return &Wiring{Pins: DefaultPins, Speed: DefaultSPISpeed} }
@@ -26,8 +31,12 @@ func TestConfigTxtChangesOnlyItsBlock(t *testing.T) {
 	if !bytes.Contains(changed, []byte("dtparam=dc-gpio=22\n")) {
 		t.Fatalf("unconnected lines should be left out:\n%s", changed)
 	}
-	if bytes.Contains(changed, []byte("label=home")) || !bytes.Contains(changed, []byte("dtoverlay=gpio-key,gpio=26,keycode=304,label=a\n")) {
-		t.Fatalf("buttons: an unconnected one listed or a connected one not:\n%s", changed)
+	if bytes.Count(changed, []byte("dtoverlay="+ButtonsOverlay+"\n")) != 1 || bytes.Contains(changed, []byte("gpio-key,")) {
+		t.Fatalf("buttons: want the one overlay of them all:\n%s", changed)
+	}
+	pins.Up, pins.Down, pins.Left, pins.Right, pins.A, pins.B, pins.Select, pins.Cancel = -1, -1, -1, -1, -1, -1, -1, -1
+	if none := ConfigTxt(once, &Wiring{Pins: pins, Speed: 16000000}); bytes.Contains(none, []byte(ButtonsOverlay)) {
+		t.Fatalf("the buttons' overlay loaded with no button connected:\n%s", none)
 	}
 	if back := ConfigTxt(changed, nil); string(back) != stockConfig {
 		t.Fatalf("taking the panel away did not give back the stock file:\n%s", back)
@@ -36,6 +45,58 @@ func TestConfigTxtChangesOnlyItsBlock(t *testing.T) {
 		if !bytes.Contains(once, []byte(want)) {
 			t.Errorf("config.txt lacks %q", want)
 		}
+	}
+}
+
+// testdata/bcm2712-rpi-5-b.dtb is the Pi 5's tree from the pinned kernel
+// linux-image-6.18.50+rpt-rpi-2712.
+func TestButtonsDTBO(t *testing.T) {
+	pins := DefaultPins
+	pins.Home = -1
+	dtbo := ButtonsDTBO(pins)
+	o, err := fdt.Parse(dtbo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := o.Find("/fragment@1/__overlay__/vedutaos-keys")
+	if !bytes.Equal(prop(t, keys, "compatible"), fdt.Strings("gpio-keys")) || len(keys.Children) != 8 || keys.Child("button-home") != nil {
+		t.Fatalf("want one gpio-keys device with the eight buttons connected: %+v", keys)
+	}
+	a := keys.Child("button-a")
+	if !bytes.Equal(prop(t, a, "linux,code"), fdt.Cells(btnSouth)) || !bytes.Equal(prop(t, a, "gpios"), fdt.Cells(0xffffffff, 26, gpioActiveLow)) {
+		t.Errorf("button-a: code %x gpios %x", prop(t, a, "linux,code"), prop(t, a, "gpios"))
+	}
+	if got := prop(t, o.Find("/__fixups__"), "gpio"); bytes.Count(got, []byte(":gpios:0")) != 8 || !bytes.HasPrefix(got, []byte("/fragment@0:target:0\x00")) {
+		t.Errorf("fixups: %q", got)
+	}
+
+	// fdtoverlay, when it is here, applies it to the Pi 5's tree: the buttons point at RP1's
+	// GPIO controller, and their pull-ups are a pin state of it.
+	tool, err := exec.LookPath("fdtoverlay")
+	if err != nil {
+		return
+	}
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "buttons.dtbo"), dtbo, 0o644)
+	out := filepath.Join(dir, "out.dtb")
+	if msg, err := exec.Command(tool, "-i", filepath.Join("testdata", "bcm2712-rpi-5-b.dtb"), "-o", out, filepath.Join(dir, "buttons.dtbo")).CombinedOutput(); err != nil {
+		t.Fatalf("fdtoverlay: %v\n%s", err, msg)
+	}
+	b, _ := os.ReadFile(out)
+	tree, err := fdt.Parse(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gpio := tree.Label("gpio")
+	if !bytes.Equal(prop(t, gpio, "compatible"), fdt.Strings("raspberrypi,rp1-gpio")) {
+		t.Fatalf("the Pi 5's gpio label is %q", prop(t, gpio, "compatible"))
+	}
+	applied := tree.Find("/vedutaos-keys")
+	if !bytes.Equal(prop(t, applied.Child("button-a"), "gpios"), fdt.Cells(tree.Phandle(gpio), 26, gpioActiveLow)) {
+		t.Errorf("button-a gpios %x", prop(t, applied.Child("button-a"), "gpios"))
+	}
+	if !bytes.Equal(prop(t, applied, "pinctrl-0"), fdt.Cells(tree.Phandle(gpio.Child("vedutaos-keys-pins")))) {
+		t.Errorf("pinctrl-0 %x is not the pull-ups", prop(t, applied, "pinctrl-0"))
 	}
 }
 

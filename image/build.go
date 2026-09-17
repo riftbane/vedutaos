@@ -66,9 +66,10 @@ var (
 	// commonModules are what every console needs: the card's file system, a USB pad or
 	// keyboard as event devices.
 	commonModules = []string{"vfat", "nls_cp437", "nls_ascii", "xhci-pci", "usbhid", "hid-generic", "evdev"}
-	// piModules drive the panel: SPI on the boards up to the Pi 4 and on the Pi 5, the
-	// MIPI DBI panel driver, and a backlight on a GPIO or PWM line.
-	piModules = []string{"spi-bcm2835", "spi-dw-mmio", "panel-mipi-dbi", "gpio_backlight", "pwm_bl"}
+	// piModules drive the panel and the buttons: SPI on the boards up to the Pi 4 and on
+	// the Pi 5, the MIPI DBI panel driver, a backlight on a GPIO or PWM line, and the
+	// buttons of the gpio-key overlays (a module on the Pi kernels, not built in).
+	piModules = []string{"spi-bcm2835", "spi-dw-mmio", "panel-mipi-dbi", "gpio_backlight", "pwm_bl", "gpio_keys"}
 	// virtModules are QEMU's disk and screen.
 	virtModules = []string{"virtio_blk", "virtio-gpu"}
 )
@@ -265,6 +266,9 @@ func Build(o Options) (Result, error) {
 
 	// The card's own files.
 	if err := os.WriteFile(filepath.Join(stage, "config.txt"), ConfigTxt(nil, &o.Wiring), 0o644); err != nil {
+		return r, err
+	}
+	if err := os.WriteFile(filepath.Join(stage, "overlays", ButtonsOverlay+".dtbo"), ButtonsDTBO(o.Wiring.Pins), 0o644); err != nil {
 		return r, err
 	}
 	if err := os.WriteFile(filepath.Join(stage, "cmdline.txt"), CmdlineTxt(), 0o644); err != nil {

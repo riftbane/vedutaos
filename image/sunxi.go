@@ -101,13 +101,10 @@ func Zero2WTree(dtb []byte, w Wiring) ([]byte, error) {
 		p.Set("backlight", fdt.Cells(t.Phandle(bl)))
 	}
 
-	var buttons []Line
+	buttons := w.Pins.buttons()
 	var pins []string
-	for _, l := range w.Pins.Lines() {
-		if l.Code != 0 && *l.GPIO >= 0 {
-			buttons = append(buttons, l)
-			pins = append(pins, zero2wHeader[*l.GPIO])
-		}
+	for _, l := range buttons {
+		pins = append(pins, zero2wHeader[*l.GPIO])
 	}
 	if len(buttons) > 0 {
 		// The pull-ups are set by the pin controller, which every kernel honours, rather than
