@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	veduta "github.com/riftbane/veduta/v2"
 	"github.com/riftbane/veduta/v2/gfx"
 	"github.com/riftbane/veduta/v2/platform"
 	"github.com/riftbane/veduta/v2/script"
@@ -206,6 +207,17 @@ func TestGameCommand(t *testing.T) {
 	}
 	if _, err := gameCommand(card.Card{Dir: "/g/new", Script: "/g/new/main.lua", API: script.APILevel + 1}); err == nil || notice(err) != "UPDATE VEDUTAOS" {
 		t.Fatalf("a later API level: %v", err)
+	}
+}
+
+func TestGameEnv(t *testing.T) {
+	base := []string{"VEDUTA_SCALE=4"}
+	if got := gameEnv(base, "", card.Card{Dir: "/boot/firmware/games/cave"}); len(got) != 1 {
+		t.Fatalf("without saves: %v", got)
+	}
+	got := gameEnv(base, "/card/saves", card.Card{Dir: "/boot/firmware/games/cave"})
+	if len(got) != 2 || got[1] != veduta.SaveDirEnv+"=/card/saves/cave" {
+		t.Fatalf("with saves: %v", got)
 	}
 }
 

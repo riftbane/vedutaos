@@ -25,14 +25,25 @@ const (
 
 // qemuConfig is everything the QEMU command line is made from.
 type qemuConfig struct {
-	Kernel  string   // Debian's arm64 kernel, written beside the image by vedutaos image
-	Initrd  string   // its initramfs: the console
-	Card    string   // the card folder, shown to the machine as a disk labelled card.Label
-	Accel   string   // tcg, kvm or hvf
-	CPUs    int      // virtual processors
-	Memory  string   // guest memory, as QEMU spells it
-	Display string   // QEMU's display backend, empty for its default
-	Extra   []string // anything after "--"
+	Kernel  string // Debian's arm64 kernel, written beside the image by vedutaos image
+	Initrd  string // its initramfs: the console
+	Card    string // the card folder, shown to the machine as a disk labelled card.Label
+	Accel   string // tcg, kvm or hvf
+	CPUs    int    // virtual processors
+	Memory  string // guest memory, as QEMU spells it
+	Display string // QEMU's display backend, empty for its default
+	// Disk, when set, is a FAT disk image made from the card folder, shown instead of the
+	// folder so that games can save (QEMU cannot reliably write back into a folder).
+	Disk  string
+	Extra []string // anything after "--"
+}
+
+// cardBlockdev is the card's -blockdev: the folder, read-only, or the disk made from it.
+func cardBlockdev(c qemuConfig) string {
+	if c.Disk != "" {
+		return "driver=raw,node-name=card,file.driver=file,file.filename=" + qemuEscape(c.Disk)
+	}
+	return "driver=vvfat,node-name=card,dir=" + qemuEscape(c.Card) + ",label=" + card.Label + ",read-only=on"
 }
 
 // qemuArgs returns the arguments of qemu-system-aarch64 for c.
@@ -56,7 +67,7 @@ func qemuArgs(c qemuConfig) []string {
 		"-append", "console=tty1 console=ttyAMA0 "+strings.Join(image.CmdlineSettings, " "),
 		// -blockdev rather than -drive file=: a Windows path's drive letter would read as a
 		// protocol there.
-		"-blockdev", "driver=vvfat,node-name=card,dir="+qemuEscape(c.Card)+",label="+card.Label+",read-only=on",
+		"-blockdev", cardBlockdev(c),
 		// No option ROM: nothing boots from the disk, and not every QEMU installation ships
 		// the ROM file.
 		"-device", "virtio-blk-pci,drive=card,romfile=",
@@ -105,6 +116,7 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 		cpus     = fs.Int("cpus", 4, "virtual processors")
 		memory   = fs.String("memory", "1G", "guest memory")
 		printCmd = fs.Bool("print", false, "make the card and print the QEMU command, without running it")
+		writable = fs.Bool("writable-card", false, "let games save: the card is a FAT disk made from the card folder, and the saves are copied back into the folder when the machine stops (needs mtools)")
 	)
 	s.register(fs)
 	fs.Usage = func() {
@@ -182,6 +194,17 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 	cfg := qemuConfig{
 		Kernel: *kernel, Initrd: *initrd, Card: *cardDir, Accel: accelerator(),
 		CPUs: *cpus, Memory: *memory, Display: *display, Extra: extra,
+	}
+	if *writable {
+		cfg.Disk = filepath.Join(cache, "card.img")
+		if err := image.CardDisk(cfg.Disk, *cardDir, card.Label); err != nil {
+			return fail(fmt.Errorf("--writable-card: %w", err))
+		}
+		defer func() {
+			if err := image.CopyFromCardDisk(cfg.Disk, card.Saves, *cardDir); err != nil {
+				fmt.Fprintf(stderr, "vedutaos qemu: copying the saves back: %v\n", err)
+			}
+		}()
 	}
 	argv := qemuArgs(cfg)
 	fmt.Fprintf(stdout, "\n%s %s\n", qemu, strings.Join(quoteAll(argv), " "))

@@ -78,6 +78,13 @@ func TestConsole(t *testing.T) {
 	if out, err := exec.Command("go", "run", "github.com/riftbane/veduta/v2/cmd/veduta", "init", game).CombinedOutput(); err != nil {
 		t.Fatalf("making the game: %v\n%s", err, out)
 	}
+	// It saves as it starts, which the card must keep.
+	mainLua, err := os.OpenFile(filepath.Join(game, "main.lua"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintln(mainLua, "\nfunction game.init()\n  assert(save.write(\"e2e\", {started = true, tick = engine.tick}))\nend")
+	mainLua.Close()
 	monitor := filepath.Join(work, "monitor.sock")
 	logf, err := os.Create(filepath.Join(work, "serial.log"))
 	if err != nil {
@@ -87,7 +94,7 @@ func TestConsole(t *testing.T) {
 
 	// The tool makes the card and boots the console as it would for a person, with the
 	// screen and the monitor moved where the test can reach them.
-	c.qemu = exec.Command(tool, "qemu", "--kernel", kernel, "--card", filepath.Join(work, "card"), "--game", game,
+	c.qemu = exec.Command(tool, "qemu", "--kernel", kernel, "--card", filepath.Join(work, "card"), "--game", game, "--writable-card",
 		"--", "-display", "none", "-monitor", "unix:"+monitor+",server,nowait")
 	c.qemu.Env = append(os.Environ(), "XDG_CACHE_HOME="+filepath.Join(work, "cache"), "HOME="+work)
 	c.qemu.Stdout, c.qemu.Stderr = logf, logf
@@ -113,7 +120,7 @@ func TestConsole(t *testing.T) {
 	t.Log("waiting for the console to boot")
 	c.waitLog(25*time.Minute, "the dashboard", `vedutaos: dashboard: 1 game`, 1)
 	log := c.log()
-	for _, want := range []string{`vedutaos: modules: \d+ loaded, 0 failed`, `vedutaos: card /dev/\S+ \(VEDUTA\) on /boot/firmware`, `vedutaos: settings from the card: VEDUTA_SCALE=4`, `vedutaos: framebuffers: fb0 virtio_gpudrmfb`} {
+	for _, want := range []string{`vedutaos: modules: \d+ loaded, 0 failed`, `vedutaos: card /dev/\S+ \(VEDUTA\) on /boot/firmware`, `vedutaos: games save in /card/saves`, `vedutaos: settings from the card: VEDUTA_SCALE=4`, `vedutaos: framebuffers: fb0 virtio_gpudrmfb`} {
 		if !regexp.MustCompile(want).MatchString(log) {
 			t.Errorf("the serial log lacks %s", want)
 		}
@@ -175,6 +182,10 @@ func TestConsole(t *testing.T) {
 		}
 	case <-time.After(2 * time.Minute):
 		t.Error("QEMU is still running two minutes after the console switched off")
+	}
+	// The game's save is on the card, in its own folder.
+	if b, err := os.ReadFile(filepath.Join(work, "card", "saves", "probe", "e2e.json")); err != nil || string(b) != `{"started":true,"tick":0}` {
+		t.Errorf("the game's save on the card: %q %v", b, err)
 	}
 }
 

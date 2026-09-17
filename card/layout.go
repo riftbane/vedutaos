@@ -13,4 +13,5 @@ const (
 	DebugFile   = Dir + "/debug"   // when present, a shell on the serial port and on tty2
 	ReleaseFile = Dir + "/release" // which image wrote the card
 	Games       = "games"          // one folder per game
+	Saves       = "saves"          // the games' saves: one folder per game, named as its folder in games
 )

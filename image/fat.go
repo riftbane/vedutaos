@@ -85,3 +85,52 @@ func listFAT(img string) ([]string, error) {
 	}
 	return paths, nil
 }
+
+// CardDiskSize is the size of a card disk for QEMU: enough FAT32 clusters, and sparse.
+const CardDiskSize = 512 << 20
+
+// CardDisk writes img, a disk holding one FAT32 volume labelled label with everything in
+// dir on it: a card QEMU can write to, as its folder-backed disk cannot reliably be.
+func CardDisk(img, dir, label string) error {
+	if err := Check(); err != nil {
+		return err
+	}
+	f, err := os.Create(img)
+	if err != nil {
+		return err
+	}
+	total := uint32(CardDiskSize / sectorSize)
+	_, err = f.Write(mbr(total, 0x56454455))
+	if err == nil {
+		err = f.Truncate(CardDiskSize)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	if err := formatFAT(img, total, label); err != nil {
+		return err
+	}
+	return copyToFAT(img, dir)
+}
+
+// CopyFromCardDisk copies the folder rel of a card disk, with everything in it, into dir,
+// replacing what is there. A disk without the folder copies nothing.
+func CopyFromCardDisk(img, rel, dir string) error {
+	paths, err := listFAT(img)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, p := range paths { // folders are listed with a trailing slash
+		if strings.EqualFold(strings.Trim(p, "/"), rel) {
+			found = true
+		}
+	}
+	if !found {
+		return nil
+	}
+	return mtools(img, "mcopy", "-s", "-n", "-o", "-Q", "::/"+rel, dir+string(filepath.Separator))
+}

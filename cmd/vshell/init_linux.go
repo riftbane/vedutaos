@@ -181,7 +181,8 @@ func (s *system) mountCard(acceptBoot bool) bool {
 	if dev == "" {
 		return false
 	}
-	if err := syscall.Mount(dev, initramfs.CardMount, "vfat", syscall.MS_RDONLY|syscall.MS_NOATIME, ""); err != nil {
+	writable, err := mountCardAt(dev)
+	if err != nil {
 		if msg := fmt.Sprintf("card %s (%s): mount: %v", dev, label, err); msg != s.lastFail {
 			s.lastFail = msg
 			say("%s", msg)
@@ -192,6 +193,13 @@ func (s *system) mountCard(acceptBoot bool) bool {
 	s.cardDev = dev
 	s.mu.Unlock()
 	say("card %s (%s) on %s", dev, label, initramfs.CardMount)
+	if writable {
+		saves := filepath.Join(initramfs.CardWrite, card.Saves)
+		os.Setenv(initramfs.SavesEnv, saves)
+		say("games save in %s", saves)
+	} else {
+		os.Unsetenv(initramfs.SavesEnv)
+	}
 	if b, err := os.ReadFile(cardPath(card.EnvFile)); err == nil {
 		kv := parseEnv(b)
 		setEnv(kv)
@@ -206,6 +214,28 @@ func (s *system) mountCard(acceptBoot bool) bool {
 		s.shells()
 	}
 	return true
+}
+
+// mountCardAt mounts the card: read-write on CardWrite, where only games' saves are
+// written, and bound read-only on CardMount, where everything else reads it. A card that
+// cannot be written (a locked card, a read-only disk) is mounted read-only on CardMount
+// alone, and games cannot save. vfat's flush option writes a file out when it is closed,
+// so a save is on the card before the game goes on.
+func mountCardAt(dev string) (writable bool, err error) {
+	if err := os.MkdirAll(initramfs.CardWrite, 0o755); err == nil {
+		if werr := syscall.Mount(dev, initramfs.CardWrite, "vfat", syscall.MS_NOATIME, "flush"); werr == nil {
+			if err := syscall.Mount(initramfs.CardWrite, initramfs.CardMount, "", syscall.MS_BIND, ""); err == nil {
+				if err := syscall.Mount("", initramfs.CardMount, "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_NOATIME, ""); err == nil {
+					return true, nil
+				}
+				syscall.Unmount(initramfs.CardMount, 0)
+			}
+			syscall.Unmount(initramfs.CardWrite, 0)
+		} else {
+			say("card %s cannot be written (%v): games cannot save", dev, werr)
+		}
+	}
+	return false, syscall.Mount(dev, initramfs.CardMount, "vfat", syscall.MS_RDONLY|syscall.MS_NOATIME, "")
 }
 
 func cardPath(rel string) string {
@@ -351,7 +381,9 @@ func (s *system) halt(cmd int, why string) {
 	signalChildren(syscall.SIGTERM)
 	time.Sleep(time.Second)
 	signalChildren(syscall.SIGKILL)
+	syscall.Sync()
 	syscall.Unmount(initramfs.CardMount, 0)
+	syscall.Unmount(initramfs.CardWrite, 0)
 	syscall.Sync()
 	syscall.Reboot(cmd)
 	for {

@@ -43,6 +43,11 @@ a Go game built for the console if Go is installed), and can be repeated. From t
 `go run ./cmd/vedutaos qemu …` boots `out/vmlinuz` and `out/initrd.img` instead, the
 kernel and console `vedutaos image` built there.
 
+The card folder is shown to the machine read-only, so games cannot save. With
+`--writable-card` the card is a FAT disk made from the folder (it needs mtools, as `vedutaos
+image` does); when the machine stops, its `saves` folder is copied back into the card folder,
+where the next run finds it.
+
 The first time, `vedutaos`:
 
 1. fetches this release's `vmlinuz` (Debian's arm64 kernel) and `initrd.img` (the console,

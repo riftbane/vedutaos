@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	veduta "github.com/riftbane/veduta/v2"
 	"github.com/riftbane/veduta/v2/gfx"
 	"github.com/riftbane/veduta/v2/gfx/soft"
 	"github.com/riftbane/veduta/v2/platform"
@@ -313,6 +314,7 @@ func runGame(c card.Card) error {
 		return err
 	}
 	cmd.Dir = c.Dir
+	cmd.Env = gameEnv(os.Environ(), os.Getenv(initramfs.SavesEnv), c)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := startChild(cmd); err != nil {
 		say("game %s: %v", c.Title, err)
@@ -326,6 +328,15 @@ func runGame(c card.Card) error {
 		say("game %s ended", c.Title)
 	}
 	return err
+}
+
+// gameEnv is a game's environment: the dashboard's, and when the card takes saves (saves is
+// its saves folder), the game's own folder of saves in it, named after the game's folder.
+func gameEnv(env []string, saves string, c card.Card) []string {
+	if saves == "" {
+		return env
+	}
+	return append(env, veduta.SaveDirEnv+"="+filepath.Join(saves, filepath.Base(c.Dir)))
 }
 
 // gameCommand is the process that plays a game.

@@ -9,8 +9,9 @@ VedutaOS is an image, `vedutaos.img.xz`, and it is bare Linux: one FAT32 volume 
 the Raspberry Pi firmware and kernels, Armbian's kernel for the Orange Pi with its U-Boot
 before the volume, and for each kernel an initramfs with the console in it — the dashboard, which is also the system's init, a static busybox, the
 panel's firmware and a dozen drivers. No distribution, no root file system, no service
-manager, no users, no network. The card is mounted read-only and the console is immune to
-having its power cut. The same console, in an initramfs for Debian's arm64 kernel, boots on
+manager, no users, no network. The card is read-only to everything but the games' saves,
+which are written to a synced file beside the previous save, so the console survives having
+its power cut. The same console, in an initramfs for Debian's arm64 kernel, boots on
 QEMU, which is how it is tested. Each release carries the image, that kernel and initramfs,
 and `vedutaos`, the program that puts games on cards and boots the console on a PC.
 
@@ -51,6 +52,7 @@ USB stick labelled `VEDUTA`, which the console takes instead when it is plugged 
 | Path | What it is |
 |---|---|
 | `games/<name>/` | one folder per game: its program or its Lua scripts, its assets, a `card.json` |
+| `saves/<name>/` | each game's saves, written by the game (`<save>.json`); copy them to keep a game's progress |
 | `vedutaos/env` | settings overriding the console's (`VEDUTA_SCALE`, `VEDUTA_FB`, `VEDUTA_PAD`), optional |
 | `vedutaos/debug` | while present, a shell on the serial port and on tty2, optional |
 | `vedutaos/vshell` | a dashboard replacing the image's while it is there: how a console is updated from a PC |
@@ -106,7 +108,9 @@ The Pi firmware loads `kernel8.img` (or `kernel_2712.img` on a Pi 5) and its ini
 from the card; on the Orange Pi, U-Boot loads `sunxi/Image`, `sunxi/initrd.img` and the
 board's device tree, as `extlinux/extlinux.conf` says. The kernel runs `/init`, which is `vshell`: it mounts `/proc`, `/sys` and
 `/dev`, loads the modules in `/lib/modules/order`, waits for a volume labelled `VEDUTA`
-or, failing that, `VEDUTAOS`, mounts it read-only on `/boot/firmware`, applies the card's
+or, failing that, `VEDUTAOS`, mounts it read-write on `/card` and binds it read-only on
+`/boot/firmware` (a card that cannot be written is mounted read-only alone, and games cannot
+save), gives each game `VEDUTA_SAVE_DIR=/card/saves/<name>`, applies the card's
 settings, takes the framebuffer away from the text console, and shows the dashboard. It
 reaps the processes that come back to it, opens the shells when the card asks, and
 switches the machine off when the menu's POWER OFF is chosen. Every step is one line on the kernel

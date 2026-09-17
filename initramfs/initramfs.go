@@ -9,4 +9,6 @@ const (
 	Release    = "/etc/vedutaos-release" // the image's version
 	Firmware   = "/lib/firmware"         // where the kernel looks for the panel's start-up file
 	CardMount  = "/boot/firmware"        // where the card is mounted, read-only
+	CardWrite  = "/card"                 // the same card mounted read-write, where only saves are written
+	SavesEnv   = "VEDUTAOS_SAVES"        // names the card's saves folder to the dashboard, which gives each game its own
 )

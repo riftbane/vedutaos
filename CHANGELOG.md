@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Saves on the card: init mounts the card read-write on `/card` and binds it read-only on
+  `/boot/firmware`, and each game runs with `VEDUTA_SAVE_DIR=/card/saves/<game folder>`, the
+  engine writing a synced file beside the previous save. vfat's `flush` puts a save on the
+  card when it is closed; switching off syncs and unmounts both. A card that cannot be
+  written is mounted read-only as before, and games cannot save.
+- `vedutaos qemu --writable-card`: the card is a FAT disk made from the folder, whose saves
+  are copied back when QEMU stops (QEMU's folder-backed disk corrupts the volume or stops
+  on writes). The e2e test's game saves as it starts, and the test finds the save in the
+  card folder after the console switched off.
+
 ## v0.5.0-rc.4 — 2026-09-17
 
 - Built against engine v2.0.0-rc.4: Lua games can give entities parents and hitboxes, spawn
