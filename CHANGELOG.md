@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.5.0-rc.4 — 2026-09-17
+
+- Built against engine v2.0.0-rc.4: Lua games can give entities parents and hitboxes, spawn
+  prefabs, draw images and panels in the hud, keep assets in folders and use `math.deg`
+  and `math.rad`. `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass.
+
 ## v0.5.0-rc.3 — 2026-09-17
 
 ### Fixed
