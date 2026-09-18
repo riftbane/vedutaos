@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.5.0-rc.7 — 2026-09-18
+
+Built against engine v2.0.0-rc.11: Lua games draw tile maps (`.vmap`, with terrain
+borders), animate textures and entities by clip, and cut textures from part of a PNG.
+`go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass.
+
 ## v0.5.0-rc.6 — 2026-09-18
 
 Built against engine v2.0.0-rc.8: a game's sources are named `crate.vmodel`, `main.vscene`
