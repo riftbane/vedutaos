@@ -247,7 +247,7 @@ func TestScriptProject(t *testing.T) {
 		"lib/util.lua=return {}",
 		"out/tmp.lua=junk",
 		".git/hook.lua=junk",
-		"tests/scenarios/start.scenario.json={}",
+		"tests/scenarios/start.vscenario={}",
 		"assets/scenes/main.json={}",
 		"assets/.cooked/main.vda=cooked",
 		"icon.png=png",

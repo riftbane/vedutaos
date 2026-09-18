@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.5.0-rc.6 — 2026-09-18
+
+Built against engine v2.0.0-rc.8: a game's sources are named `crate.vmodel`, `main.vscene`
+and so on (the engine's `veduta upgrade` renames older ones); a game deployed with an
+older tool must be upgraded first. `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e`
+pass.
+
 ## v0.5.0-rc.5 — 2026-09-17
 
 Built against engine v2.0.0-rc.5: Lua games save, draw accented text, animate sprite
