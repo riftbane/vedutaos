@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.5.0-rc.8 — 2026-09-18
+
+Built against engine v2.0.0-rc.14: maps draw autotiles (hand-drawn island and lake tiles,
+picked by neighbours). `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass.
+
 ## v0.5.0-rc.7 — 2026-09-18
 
 Built against engine v2.0.0-rc.11: Lua games draw tile maps (`.vmap`, with terrain
