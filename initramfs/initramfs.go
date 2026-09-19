@@ -12,7 +12,8 @@ const (
 	CardWrite  = "/card"                 // the same card mounted read-write, where only saves are written
 	SavesEnv   = "VEDUTAOS_SAVES"        // names the card's saves folder to the dashboard, which gives each game its own
 
-	WPASupplicant = "/bin/wpa_supplicant" // the Wi-Fi, where the image has it: its libraries are in Libs
-	Libs          = "/lib"                // wpa_supplicant's shared libraries, and the dynamic loader
-	DHCPScript    = "/etc/udhcpc.script"  // what busybox's udhcpc runs with the address it got
+	WPASupplicant = "/bin/wpa_supplicant"                // the Wi-Fi, where the image has it: its libraries are in Libs
+	Libs          = "/lib"                               // wpa_supplicant's shared libraries, and the dynamic loader
+	DHCPScript    = "/etc/udhcpc.script"                 // what busybox's udhcpc runs with the address it got
+	Certificates  = "/etc/ssl/certs/ca-certificates.crt" // the root certificates, where Go's HTTPS looks
 )

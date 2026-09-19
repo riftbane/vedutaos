@@ -39,7 +39,6 @@ import (
 	"github.com/riftbane/vedutaos/shell"
 	"github.com/riftbane/vedutaos/update"
 	"github.com/riftbane/vedutaos/wifi"
-	_ "golang.org/x/crypto/x509roots/fallback" // the certificates HTTPS is checked with: the console has none of its own
 )
 
 // version is set by the image build (-ldflags "-X main.version=v0.3.0").

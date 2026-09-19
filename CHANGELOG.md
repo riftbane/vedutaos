@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v0.5.0-rc.11 — 2026-09-19
+
+`go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass; an update from rc.9 to
+rc.10's published boot files, run against GitHub on a copy of a card, installed them and
+kept `config.txt` and the games.
+
+### Changed
+
+- The root certificates HTTPS checks updates with come from Debian's `ca-certificates`
+  (pinned), bundled into `/etc/ssl/certs/ca-certificates.crt` in the initramfs, instead of
+  a Go module: the console stays the standard library and the engine.
+
 ## v0.5.0-rc.10 — 2026-09-19
 
 Built against engine v2.0.0-rc.15. `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e`

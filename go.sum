@@ -1,4 +1,2 @@
 github.com/riftbane/veduta/v2 v2.0.0-rc.15 h1:RbThGtti8ONcIoGtn58WGx8E3NDHXJWnXt3D5sflOzI=
 github.com/riftbane/veduta/v2 v2.0.0-rc.15/go.mod h1:MOoj6aPYqikkkGbzlwoLSMv5yiUzk9TE1Fja53tVPws=
-golang.org/x/crypto/x509roots/fallback v0.0.0-20260918190515-b4dcfb54b863 h1:Ae8WNKEai/7zA5xbTM18lTvVGnew2MjS2IHKd6fqml8=
-golang.org/x/crypto/x509roots/fallback v0.0.0-20260918190515-b4dcfb54b863/go.mod h1:HPze8vhfG6fO06AM+VSvxRm4E3+5Yk375mgrJ5M2z1E=

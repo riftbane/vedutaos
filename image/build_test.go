@@ -62,7 +62,11 @@ func TestBuild(t *testing.T) {
 		}, nil)),
 		Busybox:      pin("busybox-static", map[string][]byte{"usr/bin/busybox": []byte("busybox!")}),
 		WiFiFirmware: pin("firmware-brcm80211", wifiFirmware),
-		WiFi:         []Package{pin("wpasupplicant", map[string][]byte{"usr/sbin/wpa_supplicant": minimalELF(elf.ET_EXEC, elf.EM_AARCH64)})},
+		Certificates: pin("ca-certificates", map[string][]byte{
+			"usr/share/ca-certificates/mozilla/B_Root.crt": []byte("-----B-----"),
+			"usr/share/ca-certificates/mozilla/A_Root.crt": []byte("-----A-----\n"),
+		}),
+		WiFi: []Package{pin("wpasupplicant", map[string][]byte{"usr/sbin/wpa_supplicant": minimalELF(elf.ET_EXEC, elf.EM_AARCH64)})},
 	}
 	get := func(url string) (io.ReadCloser, error) {
 		b, ok := served[url]
@@ -222,6 +226,9 @@ func TestBuild(t *testing.T) {
 		t.Errorf("dependencies load late: %v", names)
 	}
 	// QEMU's has wpa_supplicant for its simulated radios, and no Raspberry Pi firmware.
+	if e := files[strings.TrimPrefix(initramfs.Certificates, "/")]; string(e.Data) != "-----A-----\n-----B-----\n" {
+		t.Errorf("the certificates: %q", e.Data)
+	}
 	for _, f := range []string{initramfs.WPASupplicant, initramfs.DHCPScript} {
 		if e, ok := files[strings.TrimPrefix(f, "/")]; !ok || e.Mode != modeFile|0o755 {
 			t.Errorf("%s missing, or not executable", f)
@@ -277,7 +284,7 @@ func TestBuild(t *testing.T) {
 			t.Errorf("initramfs8 holds %s, no Pi's", none)
 		}
 	}
-	for _, want := range []string{"panel_mipi_dbi", "drm", "spi_bcm2835", "spi_dw_mmio", "spi_dw", "gpio_keys", "brcmfmac", "brcmfmac_wcc", "cfg80211", "init", "bin/wpa_supplicant", "etc/udhcpc.script"} {
+	for _, want := range []string{"panel_mipi_dbi", "drm", "spi_bcm2835", "spi_dw_mmio", "spi_dw", "gpio_keys", "brcmfmac", "brcmfmac_wcc", "cfg80211", "init", "bin/wpa_supplicant", "etc/udhcpc.script", "etc/ssl/certs/ca-certificates.crt"} {
 		if !piFiles[want] {
 			t.Errorf("initramfs8 lacks %s", want)
 		}

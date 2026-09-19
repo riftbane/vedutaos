@@ -194,6 +194,11 @@ func Build(o Options) (Result, error) {
 	if err != nil {
 		return r, err
 	}
+	certificates, err := certificatesTree(roots[o.Packages.Certificates.Name])
+	if err != nil {
+		return r, err
+	}
+	supplicant.merge(certificates) // the network is for updates, over HTTPS
 	piExtra := newTree().merge(supplicant).merge(piFirmware)
 
 	stage, err := os.MkdirTemp("", "vedutaos-card-")

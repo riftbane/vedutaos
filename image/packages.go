@@ -13,15 +13,17 @@ type Package struct {
 // for the boards up to the Pi 4 and the Zero 2 W (v8) and one for the Pi 5 (2712),
 // Armbian's kernel for Allwinner boards and its U-Boot for the Orange Pi Zero 2W, Debian's
 // arm64 kernel for QEMU's virt machine, a static busybox for the shell a card can ask for
-// and for udhcpc, the Raspberry Pis' Wi-Fi firmware, and wpa_supplicant with the packages
-// of the libraries it loads.
+// and for udhcpc, the Raspberry Pis' Wi-Fi firmware, wpa_supplicant with the packages of
+// the libraries it loads, and Mozilla's root certificates, which updates are fetched over
+// HTTPS with.
 type Packages struct {
-	Firmware, KernelV8, Kernel2712, KernelSunxi, UBootZero2W, KernelVirt, Busybox, WiFiFirmware Package
-	WiFi                                                                                        []Package // wpa_supplicant first
+	Firmware, KernelV8, Kernel2712, KernelSunxi, UBootZero2W, KernelVirt, Busybox Package
+	WiFiFirmware, Certificates                                                    Package
+	WiFi                                                                          []Package // wpa_supplicant first
 }
 
 func (p Packages) all() []Package {
-	return append([]Package{p.Firmware, p.KernelV8, p.Kernel2712, p.KernelSunxi, p.UBootZero2W, p.KernelVirt, p.Busybox, p.WiFiFirmware}, p.WiFi...)
+	return append([]Package{p.Firmware, p.KernelV8, p.Kernel2712, p.KernelSunxi, p.UBootZero2W, p.KernelVirt, p.Busybox, p.WiFiFirmware, p.Certificates}, p.WiFi...)
 }
 
 // Archives the pins point into. Debian's pool drops a version once a newer one replaces
@@ -106,6 +108,7 @@ var Stock = Packages{
 		URLs:   []string{rpiPool + "pool/main/f/firmware-nonfree/firmware-brcm80211_20260519-1~bpo13+1+rpt1_all.deb"},
 		SHA256: "c25e13e84be8dbf58b6b3381b4a10ad7e9dbeae101579376f457e0f17e60d902",
 	},
+	Certificates: wifiPackage("ca-certificates", "20250419", "pool/main/c/ca-certificates/ca-certificates_20250419_all.deb", "ef590f89563aa4b46c8260d49d1cea0fc1b181d19e8df3782694706adf05c184"),
 	// wpa_supplicant and the packages of every library it loads, as of 2026-09-19.
 	WiFi: []Package{
 		wifiPackage("wpasupplicant", "2:2.10-24", "pool/main/w/wpa/wpasupplicant_2.10-24_arm64.deb", "d9ab216060c4c66cddcd53030f1a38c57e93a25cb9e0abefa6fe8f36b686f9ae"),

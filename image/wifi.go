@@ -278,3 +278,28 @@ func piFirmwareTree(root string) (*tree, error) {
 	}
 	return t, nil
 }
+
+// certificatesTree is Mozilla's root certificates as one file where Go's HTTPS looks for
+// them, made as the package's own script would make it: every certificate it ships, one
+// after another.
+func certificatesTree(root string) (*tree, error) {
+	names, _ := filepath.Glob(filepath.Join(root, "usr", "share", "ca-certificates", "mozilla", "*.crt"))
+	if len(names) == 0 {
+		return nil, errors.New("certificates: the package has none")
+	}
+	sort.Strings(names)
+	var bundle []byte
+	for _, n := range names {
+		b, err := os.ReadFile(n)
+		if err != nil {
+			return nil, err
+		}
+		bundle = append(bundle, b...)
+		if len(b) > 0 && b[len(b)-1] != '\n' {
+			bundle = append(bundle, '\n')
+		}
+	}
+	t := newTree()
+	t.add(initramfs.Certificates, 0o644, bundle)
+	return t, nil
+}
