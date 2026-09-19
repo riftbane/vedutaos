@@ -77,6 +77,10 @@ func (m *Manager) findDevice() string {
 			sort.Strings(names)
 			return names[0]
 		}
+		if m.o.Diagnose != nil {
+			d := m.o.Diagnose()
+			m.update(func(st *Status) { st.Detail = d })
+		}
 		time.Sleep(time.Second)
 	}
 }

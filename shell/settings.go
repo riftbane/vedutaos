@@ -320,6 +320,16 @@ func (d *drawer) wifi(s State) {
 		colour = colNotice
 	}
 	d.text(d.pad, d.top, clip(line, (d.w-2*d.pad)/d.cell), colour)
+	if s.WiFi.State == wifi.NoAdapter && s.WiFi.Detail != "" {
+		// The driver's word on it, run over as many lines as it takes.
+		room := (d.w - 2*d.pad) / d.cell
+		y := d.top + 2*d.rowH
+		for l := strings.ToUpper(printable(s.WiFi.Detail)); l != ""; y += d.rowH {
+			n := min(len(l), room)
+			d.text(d.pad, y, l[:n], colDim)
+			l = l[n:]
+		}
+	}
 
 	top := d.top + d.rowH + d.pad
 	rows := max(1, (d.h-top-2*d.pad-d.cell)/d.rowH)

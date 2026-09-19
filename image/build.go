@@ -414,6 +414,8 @@ func writeInitramfs(path string, mods *modules, names []string, in initramfsInpu
 		dir(d)
 	}
 	c.file(initramfs.Init, 0o755, in.vshell)
+	dir(filepath.Dir(initramfs.Modprobe))
+	c.symlink(initramfs.Modprobe, initramfs.Init)
 	c.file(initramfs.Busybox, 0o755, in.busybox)
 	c.file(initramfs.Firmware+"/"+panel.FirmwareName, 0o644, in.firmware)
 	c.file(initramfs.Release, 0o644, []byte(in.version+"\n"))

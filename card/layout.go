@@ -13,6 +13,7 @@ const (
 	DebugFile   = Dir + "/debug"         // when present, a shell on the serial port and on tty2
 	ReleaseFile = Dir + "/release"       // which image wrote the card
 	WiFiFile    = Dir + "/wifi.json"     // the Wi-Fi networks the console joined, written by the console
+	KernelLog   = Dir + "/kernel.log"    // the kernel's messages, written by the console for whoever asks why
 	ChannelFile = Dir + "/channel"       // the software channel updates come from: stable or beta
 	UpdateFile  = Dir + "/update.tar.gz" // an update being downloaded, gone once installed
 	Games       = "games"                // one folder per game

@@ -226,6 +226,9 @@ func (c *console) wifi() {
 		c.shell(line)
 	}
 	c.waitLog(time.Minute, "the access point", `(?m)^AP-READY`, 1)
+	// The kernel's modprobe is init: it loads a module of the image by name.
+	c.shell(`/sbin/modprobe -q -- ccm && echo MOD''PROBE-OK`)
+	c.waitLog(30*time.Second, "modprobe", `(?m)^MODPROBE-OK`, 1)
 
 	// The list and the keyboard change only when a key is taken, so a change of the screen
 	// says it was; the Wi-Fi screen changes by itself as it searches, so the dashboard's
@@ -234,6 +237,9 @@ func (c *console) wifi() {
 	c.press("spc", 2*time.Minute, "the settings", `vedutaos: screen settings`, 1)
 	c.press("spc", 2*time.Minute, "the Wi-Fi screen", `vedutaos: screen wi-fi`, 1)
 	c.waitLog(2*time.Minute, "the access point in range", `vedutaos: wifi: 1 networks in range`, 1)
+	// Opening the Wi-Fi screen put the kernel's messages on the card.
+	c.shell(`grep -q mac80211_hwsim /card/vedutaos/kernel.log && echo KERNEL''-LOG-OK`)
+	c.waitLog(30*time.Second, "the kernel's log on the card", `(?m)^KERNEL-LOG-OK`, 1)
 	time.Sleep(3 * time.Second) // the screen takes the list on its next tick
 	c.press("spc", 2*time.Minute, "the password screen", `vedutaos: screen password`, 1)
 	time.Sleep(time.Second)

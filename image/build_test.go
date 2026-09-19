@@ -187,6 +187,9 @@ func TestBuild(t *testing.T) {
 	if e, ok := files["init"]; !ok || !bytes.Equal(e.Data, vshell) || e.Mode != modeFile|0o755 {
 		t.Error("init is not the dashboard, executable")
 	}
+	if e, ok := files[strings.TrimPrefix(initramfs.Modprobe, "/")]; !ok || e.Mode&0o170000 != modeLink || string(e.Data) != initramfs.Init {
+		t.Error("modprobe is not a link to init")
+	}
 	if e, ok := files[strings.TrimPrefix(initramfs.Busybox, "/")]; !ok || string(e.Data) != "busybox!" {
 		t.Error("busybox missing")
 	}

@@ -71,6 +71,37 @@ type Status struct {
 	IP       string    // the console's address on it, once it has one
 	Networks []Network // in range, strongest first
 	Scanning bool
+	Detail   string // with no adapter, what the driver said about it
+}
+
+// DriverMessage is why there is no wireless device, from the kernel's messages: the
+// driver's last word about it, or that the driver is not loaded (loaded says whether it
+// is), or that it found no chip.
+func DriverMessage(klog string, loaded bool) string {
+	if !loaded {
+		return "the Wi-Fi driver (brcmfmac) is not loaded"
+	}
+	last := ""
+	for _, l := range strings.Split(klog, "\n") {
+		if strings.Contains(l, "brcmf") {
+			last = l
+		}
+	}
+	if last == "" {
+		return "the Wi-Fi driver found no Wi-Fi chip"
+	}
+	// "<3>[    5.123456] brcmfmac: ...": the level and the time say nothing to a player.
+	if strings.HasPrefix(last, "<") {
+		if i := strings.IndexByte(last, '>'); i >= 0 {
+			last = last[i+1:]
+		}
+	}
+	if strings.HasPrefix(last, "[") {
+		if i := strings.IndexByte(last, ']'); i >= 0 {
+			last = last[i+1:]
+		}
+	}
+	return strings.TrimSpace(last)
 }
 
 // PassphraseOK reports whether a WPA passphrase can be used: 8 to 63 printable ASCII

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -104,5 +105,21 @@ func TestStore(t *testing.T) {
 	s.Load()
 	if want := []Saved{{SSID: "y"}}; !reflect.DeepEqual(s.Networks, want) {
 		t.Fatalf("a bad key: %+v", s.Networks)
+	}
+}
+
+func TestDriverMessage(t *testing.T) {
+	log := "<6>[    1.0] mmc1: new high speed SDIO card at address 0001\n" +
+		"<6>[    5.1] brcmfmac: F1 signature read @0x18000000=0x15264345\n" +
+		"<3>[    6.2] brcmfmac: brcmf_sdio_htclk: HT Avail timeout (1000000): clkctl 0x50\n" +
+		"<6>[    7.0] usb 1-1: new device\n"
+	if got := DriverMessage(log, true); got != "brcmfmac: brcmf_sdio_htclk: HT Avail timeout (1000000): clkctl 0x50" {
+		t.Errorf("%q", got)
+	}
+	if got := DriverMessage("", true); got != "the Wi-Fi driver found no Wi-Fi chip" {
+		t.Errorf("%q", got)
+	}
+	if got := DriverMessage(log, false); !strings.Contains(got, "not loaded") {
+		t.Errorf("%q", got)
 	}
 }

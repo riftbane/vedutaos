@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.5.0-rc.12 — 2026-09-19
+
+`go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass.
+
+### Fixed
+
+- The kernel had no modprobe: brcmfmac asks for its chip's vendor module
+  (`brcmfmac-wcc` for the Raspberry Pis' 43455 and 43436) by name, and a request that came
+  before init had loaded it failed, leaving the console without Wi-Fi. `/sbin/modprobe` is
+  now a link to init, which loads a module of the image by name.
+
+### Added
+
+- With no wireless device, the Wi-Fi screen shows the driver's last message (or that it
+  is not loaded, or found no chip), and the console writes the kernel's messages to
+  `vedutaos/kernel.log` on the card a minute after starting, whenever the Wi-Fi screen
+  opens, and when it switches off: a PC reads why, with no serial cable.
+
 ## v0.5.0-rc.11 — 2026-09-19
 
 `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass; an update from rc.9 to

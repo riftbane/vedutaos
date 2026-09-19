@@ -20,6 +20,8 @@ type Options struct {
 	Start func(*exec.Cmd) error
 	Wait  func(*exec.Cmd) error
 	Say   func(format string, args ...any) // one line of status; nothing when nil
+	// Diagnose says why there is no wireless device, while there is none.
+	Diagnose func() string
 }
 
 func (o *Options) defaults() {

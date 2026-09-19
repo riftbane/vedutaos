@@ -26,6 +26,7 @@ import (
 
 	"github.com/riftbane/vedutaos/card"
 	"github.com/riftbane/vedutaos/initramfs"
+	"github.com/riftbane/vedutaos/wifi"
 )
 
 const (
@@ -60,6 +61,10 @@ func initMain() {
 		go s.keepLooking()
 	}
 	s.waitFramebuffer()
+	go func() {
+		time.Sleep(time.Minute)
+		saveKernelLog()
+	}()
 	tick = unbindFbcon
 	unbindFbcon()
 	s.dashboard()
@@ -384,6 +389,7 @@ func (s *system) halt(cmd int, why string) {
 	signalChildren(syscall.SIGTERM)
 	time.Sleep(time.Second)
 	signalChildren(syscall.SIGKILL)
+	saveKernelLog()
 	syscall.Sync()
 	syscall.Unmount(initramfs.CardMount, 0)
 	syscall.Unmount(initramfs.CardWrite, 0)
@@ -514,3 +520,75 @@ func restartConsole() {
 }
 
 func syncDisks() { syscall.Sync() }
+
+// modprobe is this program as /sbin/modprobe, which the kernel runs to load a module it
+// wants by name (brcmfmac asks for its chip's vendor module): it loads the module of that
+// name among the image's, and fails for any other, as a modprobe with no module would.
+func modprobe(args []string) int {
+	name := ""
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			name = a
+			break
+		}
+	}
+	if name == "" {
+		return 1
+	}
+	b, err := os.ReadFile(initramfs.ModuleList)
+	if err != nil {
+		return 1
+	}
+	want := strings.ReplaceAll(name, "-", "_")
+	for _, p := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		base := filepath.Base(p)
+		if i := strings.Index(base, ".ko"); i >= 0 {
+			base = base[:i]
+		}
+		if strings.ReplaceAll(base, "-", "_") != want {
+			continue
+		}
+		if err := finitModule(p); err != nil && !errors.Is(err, syscall.EEXIST) {
+			return 1
+		}
+		return 0
+	}
+	return 1
+}
+
+// saveKernelLog writes the kernel's messages to the card, when it can be written: a
+// person without a serial cable can read them on a PC.
+func saveKernelLog() {
+	if !cardWritable() {
+		return
+	}
+	log, err := kernelLog()
+	if err != nil {
+		return
+	}
+	p := filepath.Join(initramfs.CardWrite, filepath.FromSlash(card.KernelLog))
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte(log), 0o644)
+}
+
+// kernelLog reads the kernel's message buffer.
+func kernelLog() (string, error) {
+	const readAll, sizeBuffer = 3, 10
+	n, err := syscall.Klogctl(sizeBuffer, nil)
+	if err != nil {
+		return "", err
+	}
+	buf := make([]byte, max(n, 1<<16))
+	n, err = syscall.Klogctl(readAll, buf)
+	if err != nil {
+		return "", err
+	}
+	return string(buf[:n]), nil
+}
+
+// wifiDiagnosis is why the console has no wireless device, from the kernel's messages.
+func wifiDiagnosis() string {
+	log, _ := kernelLog()
+	_, err := os.Stat("/sys/module/brcmfmac")
+	return wifi.DriverMessage(log, err == nil)
+}

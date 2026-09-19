@@ -4,6 +4,7 @@ package initramfs
 
 const (
 	Init       = "/init"                 // the dashboard, which is PID 1
+	Modprobe   = "/sbin/modprobe"        // a link to init, which loads a module the kernel asks for by name
 	Busybox    = "/bin/busybox"          // a shell and its tools, for a card that asks
 	ModuleList = "/lib/modules/order"    // the modules init loads, one path per line, in order
 	Release    = "/etc/vedutaos-release" // the image's version

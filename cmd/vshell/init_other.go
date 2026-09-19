@@ -8,3 +8,9 @@ func initMain() {}
 func restartConsole() {}
 
 func syncDisks() {}
+
+func modprobe([]string) int { return 1 }
+
+func saveKernelLog() {}
+
+func wifiDiagnosis() string { return "" }

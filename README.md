@@ -58,6 +58,7 @@ USB stick labelled `VEDUTA`, which the console takes instead when it is plugged 
 | `vedutaos/vshell` | a dashboard replacing the image's while it is there: how a console is updated from a PC |
 | `vedutaos/release` | which image wrote the card |
 | `vedutaos/wifi.json` | the Wi-Fi networks the console joined, with their WPA keys; written by the console |
+| `vedutaos/kernel.log` | the kernel's messages, written by the console: what to send when something does not work |
 | `vedutaos/channel` | the software channel updates come from, `stable` or `beta`; written by the console |
 
 `vedutaos card <dir>` writes these; a folder dragged into `games` works just as well. The

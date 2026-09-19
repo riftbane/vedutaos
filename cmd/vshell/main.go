@@ -79,6 +79,9 @@ var onConsole = os.Getpid() == 1 || os.Getppid() == 1
 const playCommand = "play"
 
 func main() {
+	if filepath.Base(os.Args[0]) == "modprobe" {
+		os.Exit(modprobe(os.Args[1:]))
+	}
 	if len(os.Args) == 3 && os.Args[1] == playCommand {
 		os.Exit(script.Run([]string{"-project", os.Args[2]}, os.Stdout, os.Stderr))
 	}
@@ -178,6 +181,7 @@ func startWiFi() {
 		Start:      startChild,
 		Wait:       waitChild,
 		Say:        say,
+		Diagnose:   wifiDiagnosis,
 	})
 }
 
@@ -349,6 +353,9 @@ func show(dir string, state shell.State) (shell.State, shell.Action, error) {
 		state, action = shell.Step(state, in.Next())
 		if state.Screen != was {
 			say("screen %s", state.Screen)
+			if state.Screen == shell.WiFi {
+				saveKernelLog() // what the Wi-Fi's driver said, for the card to carry to a PC
+			}
 		}
 		switch action {
 		case shell.Stay:
