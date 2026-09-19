@@ -22,6 +22,8 @@ type Options struct {
 	Say   func(format string, args ...any) // one line of status; nothing when nil
 	// Diagnose says why there is no wireless device, while there is none.
 	Diagnose func() string
+	// OnAddress is told each new address the console gets.
+	OnAddress func(ip string)
 }
 
 func (o *Options) defaults() {

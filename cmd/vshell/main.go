@@ -37,6 +37,7 @@ import (
 	"github.com/riftbane/veduta/v2/sim"
 	"github.com/riftbane/veduta/v2/sprite"
 	"github.com/riftbane/vedutaos/card"
+	"github.com/riftbane/vedutaos/clock"
 	"github.com/riftbane/vedutaos/initramfs"
 	"github.com/riftbane/vedutaos/shell"
 	"github.com/riftbane/vedutaos/update"
@@ -184,6 +185,7 @@ func startWiFi() {
 		Wait:       waitChild,
 		Say:        say,
 		Diagnose:   wifiDiagnosis,
+		OnAddress:  func(string) { go syncClock() },
 	})
 }
 
@@ -268,25 +270,33 @@ func updateReady() error {
 	case network.Status().State != wifi.Connected || network.Status().IP == "":
 		return errors.New("connect to wi-fi first")
 	}
-	if time.Now().Year() >= 2026 {
+	if clockSet() {
 		return nil
 	}
-	say("update: setting the clock")
-	cmd := exec.Command(initramfs.Busybox, "ntpd", "-n", "-q", "-p", "pool.ntp.org")
-	if err := startChild(cmd); err == nil {
-		done := make(chan struct{})
-		go func() { waitChild(cmd); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(30 * time.Second):
-			cmd.Process.Kill()
-			<-done
-		}
+	if err := syncClock(); err != nil {
+		return fmt.Errorf("could not set the clock from the network (%v)", err)
 	}
-	if time.Now().Year() < 2026 {
-		return errors.New("could not set the clock from the network")
+	return nil
+}
+
+// clockSet reports whether the clock is plausibly right: a board that never set it is in
+// 1970.
+func clockSet() bool { return time.Now().Year() >= 2026 }
+
+// syncClock sets the clock from the network.
+func syncClock() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	t, from, err := clock.Now(ctx, clock.Servers, clock.HTTPURL)
+	if err != nil {
+		say("clock: %v", err)
+		return err
 	}
-	say("update: the clock is %s", time.Now().UTC().Format(time.RFC3339))
+	if err := setSystemClock(t); err != nil {
+		say("clock: %v", err)
+		return err
+	}
+	say("clock: %s, from %s", t.UTC().Format(time.RFC3339), from)
 	return nil
 }
 

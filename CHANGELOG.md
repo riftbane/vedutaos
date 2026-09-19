@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## v0.5.0-rc.14 — 2026-09-19
+
+`go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass.
+
+### Fixed
+
+- INSTALL UPDATES said "could not set the clock from the network": busybox's ntpd is
+  static and cannot look a name up, so it never reached `pool.ntp.org`. Package `clock`
+  asks NTP servers itself (SNTP over UDP, names looked up by Go: `pool.ntp.org`,
+  `time.cloudflare.com`, `time.google.com`) and, when none answers, reads the Date of a
+  plain HTTP answer. The console sets its clock as soon as the Wi-Fi has an address, and
+  again before an update when it is still wrong; the reason is shown when it cannot.
+
 ## v0.5.0-rc.13 — 2026-09-19
 
 `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass.

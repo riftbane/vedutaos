@@ -368,6 +368,9 @@ func (s *session) poll() {
 		s.address = ip
 		if ip != "" {
 			s.m.o.Say("wifi: address %s", ip)
+			if s.m.o.OnAddress != nil {
+				s.m.o.OnAddress(ip)
+			}
 		}
 	}
 	s.m.update(func(v *Status) {

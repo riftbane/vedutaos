@@ -612,3 +612,9 @@ func loopbackUp() error {
 	}
 	return nil
 }
+
+// setSystemClock sets the kernel's clock.
+func setSystemClock(t time.Time) error {
+	tv := syscall.NsecToTimeval(t.UnixNano())
+	return syscall.Settimeofday(&tv)
+}
