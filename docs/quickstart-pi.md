@@ -60,6 +60,9 @@ Pi 5, 4, 3 B+ and Zero 2 W radios are driven by `brcmfmac` with Raspberry Pi's f
 Orange Pi Zero 2W's radio has no driver in the image yet. On the serial port the lines
 `vedutaos: wifi: …` say what it does.
 
+**TEST WI-FI**, below it, checks the connection: a ping to the network's router, a ping to
+the internet (1.1.1.1) and a look-up of github.com, each with its time or why it failed.
+
 ## 5. Updates
 
 **SOFTWARE CHANNEL** in the settings switches between STABLE (releases) and BETA

@@ -15,10 +15,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -196,6 +198,42 @@ var errRestart = errors.New("restart the console")
 // updater installs updates from GitHub, on the console only.
 var updater update.Updater
 
+// netTest is the Wi-Fi test.
+var netTest wifi.Tester
+
+// testOptions are what the Wi-Fi test reaches the network with: busybox's ping, the kernel's
+// routes, Go's resolver.
+var testOptions = wifi.TestOptions{
+	Connected: func() bool { st := network.Status(); return st.State == wifi.Connected && st.IP != "" },
+	Gateway: func() (string, error) {
+		b, err := os.ReadFile("/proc/net/route")
+		if err != nil {
+			return "", err
+		}
+		return wifi.DefaultGateway(string(b), "")
+	},
+	Ping: func(host string) (wifi.PingResult, error) {
+		var out strings.Builder
+		cmd := exec.Command(initramfs.Busybox, "ping", "-c", "3", "-W", "2", host)
+		cmd.Stdout, cmd.Stderr = &out, &out
+		if err := startChild(cmd); err != nil {
+			return wifi.PingResult{}, err
+		}
+		waitChild(cmd) // ping fails when nothing answers, which is a result, not an error
+		if r, ok := wifi.ParsePing(out.String()); ok {
+			return r, nil
+		}
+		line, _, _ := strings.Cut(strings.TrimSpace(out.String()), "\n")
+		return wifi.PingResult{}, errors.New(strings.TrimPrefix(line, "ping: "))
+	},
+	Resolve: func(name string) ([]string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return net.DefaultResolver.LookupHost(ctx, name)
+	},
+	Say: say,
+}
+
 // channelFile is where the software channel is kept, as the card is read.
 func channelFile() string {
 	return filepath.Join(initramfs.CardMount, filepath.FromSlash(card.ChannelFile))
@@ -344,6 +382,7 @@ func show(dir string, state shell.State) (shell.State, shell.Action, error) {
 		}
 		state.WiFi = network.Status()
 		state.Update = updater.Status()
+		state.NetTest = netTest.Status()
 		if state.Screen == shell.WiFi && time.Now().After(nextWiFi) {
 			network.Scan()
 			nextWiFi = time.Now().Add(wifiRescan)
@@ -378,6 +417,8 @@ func show(dir string, state shell.State) (shell.State, shell.Action, error) {
 			updater.Start(updateOptions(state.Channel))
 		case shell.CancelUpdate:
 			updater.Cancel()
+		case shell.RunTest:
+			netTest.Start(testOptions)
 		default:
 			return state, action, nil
 		}

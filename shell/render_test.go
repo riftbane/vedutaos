@@ -137,6 +137,11 @@ func TestDrawGolden(t *testing.T) {
 		{"wifi-searching", State{Screen: WiFi, WiFi: wifi.Status{State: wifi.Disconnected, Scanning: true}}},
 		{"wifi-wrong", State{Screen: WiFi, WiFi: wifi.Status{State: wifi.WrongPassword, SSID: "Home", Networks: []wifi.Network{{SSID: "Home", Signal: -45, Security: wifi.PSK}}}}},
 		{"wifi-none", State{Screen: WiFi, WiFi: wifi.Status{State: wifi.NoAdapter}}},
+		{"wifi-test", State{Screen: NetTest, WiFi: wifi.Status{State: wifi.Connected, SSID: "Home", IP: "192.168.1.23"}, NetTest: wifi.TestStatus{Running: true, Checks: []wifi.Check{
+			{Name: "ROUTER", State: wifi.CheckOK, Result: "192.168.1.1 3 ms, 3/3 replies"},
+			{Name: "INTERNET", State: wifi.CheckFailed, Result: "1.1.1.1: no answer"},
+			{Name: "DNS", State: wifi.CheckRunning},
+		}}}},
 		{"wifi-none-detail", State{Screen: WiFi, WiFi: wifi.Status{State: wifi.NoAdapter, Detail: "brcmfmac: brcmf_sdio_htclk: HT Avail timeout (1000000): clkctl 0x50"}}},
 		{"password", State{Screen: Password, Target: wifi.Network{SSID: "Home"}, Keys: Keyboard{Text: "hunter2", Row: 2, Col: 3}}},
 		{"password-symbols", State{Screen: Password, Target: wifi.Network{SSID: "Home"}, Keys: Keyboard{Text: "a very long password that scrolls off", Row: actionRow, Col: 4, Page: 2}}},

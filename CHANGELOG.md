@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v0.5.0-rc.13 — 2026-09-19
+
+`go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass.
+
+### Added
+
+- TEST WI-FI in the settings: pings the network's router (the default route) and
+  1.1.1.1 with busybox's ping, three times each, and looks up github.com, showing each
+  check's time, replies or failure; A tests again. The serial port says each result
+  (`vedutaos: wifi test: …`), and the e2e test runs it against QEMU's access point.
+
+### Fixed
+
+- lo was down: the console could not reach its own addresses, nor anything on localhost.
+  init brings it up after loading the modules.
+
 ## v0.5.0-rc.12 — 2026-09-19
 
 `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e` pass.

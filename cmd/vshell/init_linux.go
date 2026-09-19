@@ -56,6 +56,9 @@ func initMain() {
 	go s.reap()
 	go s.signals()
 	s.loadModules()
+	if err := loopbackUp(); err != nil {
+		say("lo: %v", err)
+	}
 	if !s.waitCard(cardTimeout) {
 		say("no card yet: looking on for a volume %s or %s", card.Label, card.BootLabel)
 		go s.keepLooking()
@@ -591,4 +594,21 @@ func wifiDiagnosis() string {
 	log, _ := kernelLog()
 	_, err := os.Stat("/sys/module/brcmfmac")
 	return wifi.DriverMessage(log, err == nil)
+}
+
+// loopbackUp brings up lo, which the kernel gives 127.0.0.1 as it comes up: without it the
+// console cannot reach itself, its own addresses included.
+func loopbackUp() error {
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	var ifr [40]byte // struct ifreq: the name, then the flags
+	copy(ifr[:syscall.IFNAMSIZ], "lo")
+	*(*uint16)(unsafe.Pointer(&ifr[syscall.IFNAMSIZ])) = syscall.IFF_UP | syscall.IFF_LOOPBACK | syscall.IFF_RUNNING
+	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.SIOCSIFFLAGS, uintptr(unsafe.Pointer(&ifr[0]))); e != 0 {
+		return e
+	}
+	return nil
 }

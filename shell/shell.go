@@ -33,6 +33,7 @@ const (
 	CheckUpdate                // look for an update on Channel and install it
 	CancelUpdate               // stop the download under way
 	Reboot                     // restart the console: an update was installed
+	RunTest                    // test the Wi-Fi: router, internet, names
 )
 
 // Screen is what the dashboard shows.
@@ -45,6 +46,7 @@ const (
 	WiFi                   // the networks in range
 	Password               // typing a network's password
 	Updates                // looking for, downloading and installing an update
+	NetTest                // the Wi-Fi test
 )
 
 func (s Screen) String() string {
@@ -57,6 +59,8 @@ func (s Screen) String() string {
 		return "password"
 	case Updates:
 		return "updates"
+	case NetTest:
+		return "wi-fi test"
 	}
 	return "games"
 }
@@ -70,14 +74,15 @@ type State struct {
 	MenuSel int    // index of the selected entry of the menu
 
 	Screen  Screen
-	Version string         // VedutaOS's, shown in the settings
-	WiFi    wifi.Status    // what the Wi-Fi is doing, kept up to date by the loop
-	SetSel  int            // the selected setting
-	NetSel  int            // the selected network
-	Target  wifi.Network   // the network being joined
-	Keys    Keyboard       // the password being typed
-	Channel update.Channel // the software channel updates come from
-	Update  update.Status  // what the update is doing, kept up to date by the loop
+	Version string          // VedutaOS's, shown in the settings
+	WiFi    wifi.Status     // what the Wi-Fi is doing, kept up to date by the loop
+	SetSel  int             // the selected setting
+	NetSel  int             // the selected network
+	Target  wifi.Network    // the network being joined
+	Keys    Keyboard        // the password being typed
+	Channel update.Channel  // the software channel updates come from
+	Update  update.Status   // what the update is doing, kept up to date by the loop
+	NetTest wifi.TestStatus // the Wi-Fi test, kept up to date by the loop
 }
 
 // MenuItem is an entry of the console's menu.
@@ -92,12 +97,13 @@ var Menu = []MenuItem{{"POWER OFF", Quit}}
 // The settings, in their order on the screen.
 const (
 	SettingWiFi    = "WI-FI"
+	SettingTest    = "TEST WI-FI"
 	SettingChannel = "SOFTWARE CHANNEL"
 	SettingUpdate  = "INSTALL UPDATES"
 )
 
 // SettingsItems are the settings, in their order on the screen.
-var SettingsItems = []string{SettingWiFi, SettingChannel, SettingUpdate}
+var SettingsItems = []string{SettingWiFi, SettingTest, SettingChannel, SettingUpdate}
 
 // Step applies one tick of the console's buttons, the same whether they come from a pad,
 // the handheld's keys or a keyboard. The D-pad moves and A chooses on every screen; B, or
@@ -114,6 +120,8 @@ func Step(s State, in sim.Input) (State, Action) {
 		return stepPassword(s, in)
 	case Updates:
 		return stepUpdates(s, in)
+	case NetTest:
+		return stepNetTest(s, in)
 	}
 	if s.Menu {
 		n := len(Menu)
@@ -194,6 +202,9 @@ func Draw(b *sprite.Batch, r Resources, w, h int, s State) {
 		return
 	case Updates:
 		d.updates(s)
+		return
+	case NetTest:
+		d.netTest(s)
 		return
 	}
 	scale, cell, pad, rowH := d.scale, d.cell, d.pad, d.rowH

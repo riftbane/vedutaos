@@ -32,6 +32,9 @@ func stepSettings(s State, in sim.Input) (State, Action) {
 		case SettingWiFi:
 			s.Screen, s.NetSel, s.Notice = WiFi, 0, ""
 			return s, Scan
+		case SettingTest:
+			s.Screen, s.Notice = NetTest, ""
+			return s, RunTest
 		case SettingChannel:
 			if s.Channel == update.Beta {
 				s.Channel = update.Stable
@@ -564,6 +567,52 @@ func (d *drawer) updates(s State) {
 		footer = ""
 	case update.Failed, update.UpToDate:
 		footer = "A: LOOK AGAIN   B: BACK"
+	}
+	d.footer(footer, colNotice)
+}
+
+func stepNetTest(s State, in sim.Input) (State, Action) {
+	switch {
+	case back(in):
+		s.Screen = Settings
+	case in.JustPressed(sim.ButtonA) && !s.NetTest.Running:
+		return s, RunTest
+	}
+	return s, Stay
+}
+
+func (d *drawer) netTest(s State) {
+	d.header("WI-FI TEST", "")
+	line, bad := wifiLine(s.WiFi)
+	colour := colText
+	if bad {
+		colour = colNotice
+	}
+	room := (d.w - 2*d.pad) / d.cell
+	d.text(d.pad, d.top, clip(line, room), colour)
+	y := d.top + 2*d.rowH
+	for _, c := range s.NetTest.Checks {
+		d.text(d.pad, y, c.Name, colText)
+		verdict, vc := "", colDim
+		switch c.State {
+		case wifi.CheckWaiting:
+			verdict = "-"
+		case wifi.CheckRunning:
+			verdict = "TESTING"
+		case wifi.CheckOK:
+			verdict, vc = "OK", colHeader
+		case wifi.CheckFailed:
+			verdict, vc = "FAILED", colNotice
+		}
+		d.right(d.w-d.pad, y, verdict, vc)
+		if c.Result != "" {
+			d.text(3*d.pad, y+d.rowH, clip(strings.ToUpper(c.Result), room-2), colDim)
+		}
+		y += 2*d.rowH + d.pad
+	}
+	footer := "A: TEST AGAIN   B: BACK"
+	if s.NetTest.Running {
+		footer = "B: BACK"
 	}
 	d.footer(footer, colNotice)
 }

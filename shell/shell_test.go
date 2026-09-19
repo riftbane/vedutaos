@@ -238,7 +238,7 @@ func TestKeyboardReachesEveryCharacter(t *testing.T) {
 // TestStepChannelAndUpdates: A on the channel switches it and asks for it to be kept; A on
 // INSTALL UPDATES opens the updates and asks for a look.
 func TestStepChannelAndUpdates(t *testing.T) {
-	s := State{Screen: Settings, SetSel: 1, Channel: update.Beta}
+	s := State{Screen: Settings, SetSel: 2, Channel: update.Beta}
 	s, a := Step(s, press(sim.ButtonA))
 	if a != SetChannel || s.Channel != update.Stable {
 		t.Fatalf("A on the channel: action %v channel %s", a, s.Channel)
@@ -276,5 +276,26 @@ func TestStepUpdates(t *testing.T) {
 	}
 	if _, a := Step(State{Screen: Updates, Update: update.Status{State: update.Restart}}, press()); a != Reboot {
 		t.Fatalf("an installed update: action %v, want a restart", a)
+	}
+}
+
+// TestStepNetTest: A on TEST WI-FI runs the test; A runs it again once it has ended, not
+// while it runs; B goes back.
+func TestStepNetTest(t *testing.T) {
+	s := State{Screen: Settings, SetSel: 1}
+	s, a := Step(s, press(sim.ButtonA))
+	if a != RunTest || s.Screen != NetTest {
+		t.Fatalf("A on TEST WI-FI: action %v screen %v", a, s.Screen)
+	}
+	s.NetTest.Running = true
+	if _, a := Step(s, press(sim.ButtonA)); a != Stay {
+		t.Fatalf("A while testing: %v", a)
+	}
+	s.NetTest.Running = false
+	if _, a := Step(s, press(sim.ButtonA)); a != RunTest {
+		t.Fatalf("A after the test: %v", a)
+	}
+	if got, _ := Step(s, press(sim.ButtonB)); got.Screen != Settings {
+		t.Fatalf("B: screen %v", got.Screen)
 	}
 }

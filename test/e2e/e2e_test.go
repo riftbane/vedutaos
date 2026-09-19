@@ -252,6 +252,15 @@ func (c *console) wifi() {
 	c.waitLog(30*time.Second, "the network on the card", `"ssid": "`+apSSID+`"`, 1)
 
 	c.press("x", 2*time.Minute, "the settings again", `vedutaos: screen settings`, 2)
+	// The Wi-Fi test pings the access point, the network's router, which answers; the
+	// internet is beyond it and does not. Both radios are this one kernel's, so the router's
+	// address is the console's own and the ping goes through lo, which init brings up: the
+	// test checks the route, the ping and its reading, not the air.
+	c.change("down", "the TEST WI-FI row")
+	c.press("spc", 2*time.Minute, "the Wi-Fi test", `vedutaos: screen wi-fi test`, 1)
+	c.waitLog(time.Minute, "the router's answer", `vedutaos: wifi test: router: ok, 10\.9\.8\.1 \d+ ms, [1-3]/3 replies`, 1)
+	c.waitLog(time.Minute, "the end of the test", `vedutaos: wifi test: dns: `, 1)
+	c.press("x", 2*time.Minute, "the settings once more", `vedutaos: screen settings`, 3)
 	c.press("x", 2*time.Minute, "the list again", `vedutaos: screen games`, 1)
 	time.Sleep(time.Second)
 	c.change("up", "the game selected")
