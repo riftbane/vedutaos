@@ -68,10 +68,16 @@ var (
 	commonModules = []string{"vfat", "nls_cp437", "nls_ascii", "xhci-pci", "usbhid", "hid-generic", "evdev"}
 	// piModules drive the panel and the buttons: SPI on the boards up to the Pi 4 and on
 	// the Pi 5, the MIPI DBI panel driver, a backlight on a GPIO or PWM line, and the
-	// buttons of the gpio-key overlays (a module on the Pi kernels, not built in).
-	piModules = []string{"spi-bcm2835", "spi-dw-mmio", "panel-mipi-dbi", "gpio_backlight", "pwm_bl", "gpio_keys"}
-	// virtModules are QEMU's disk and screen.
-	virtModules = []string{"virtio_blk", "virtio-gpu"}
+	// buttons of the gpio-key overlays (a module on the Pi kernels, not built in). Then the
+	// Wi-Fi: brcmfmac and its vendor modules, which it would otherwise ask modprobe for,
+	// and there is no modprobe.
+	piModules = []string{"spi-bcm2835", "spi-dw-mmio", "panel-mipi-dbi", "gpio_backlight", "pwm_bl", "gpio_keys",
+		"brcmfmac", "brcmfmac_wcc", "brcmfmac_cyw", "brcmfmac_bca"}
+	// virtModules are QEMU's disk and screen, and two simulated radios for the Wi-Fi, with
+	// the ciphers mac80211 does WPA2 with in software (CCMP, and CMAC for protected
+	// management frames), which it would otherwise ask modprobe for. The Pis' radio
+	// ciphers in its own firmware.
+	virtModules = []string{"virtio_blk", "virtio-gpu", "mac80211_hwsim", "ccm", "cmac"}
 )
 
 // piKernels are the Pi kernels and the names the boot firmware looks for.
@@ -169,6 +175,22 @@ func Build(o Options) (Result, error) {
 	}
 	in := initramfsInput{vshell: vshell, busybox: busybox, firmware: fw, version: o.Version}
 
+	// The Wi-Fi: wpa_supplicant for every initramfs but the Orange Pi's, whose radio has
+	// no driver yet, and the radios' firmware for the Raspberry Pis'.
+	var wifiRoots []string
+	for _, p := range o.Packages.WiFi {
+		wifiRoots = append(wifiRoots, roots[p.Name])
+	}
+	supplicant, err := supplicantTree(wifiRoots)
+	if err != nil {
+		return r, err
+	}
+	piFirmware, err := piFirmwareTree(roots[o.Packages.WiFiFirmware.Name])
+	if err != nil {
+		return r, err
+	}
+	piExtra := newTree().merge(supplicant).merge(piFirmware)
+
 	stage, err := os.MkdirTemp("", "vedutaos-card-")
 	if err != nil {
 		return r, err
@@ -200,7 +222,7 @@ func Build(o Options) (Result, error) {
 		if err := copyGlob(filepath.Join(mods.dir, "dtb", "overlays", "*"), filepath.Join(stage, "overlays")); err != nil {
 			return r, err
 		}
-		if err := writeInitramfs(filepath.Join(stage, k.initramfs), mods, append(append([]string{}, commonModules...), piModules...), in); err != nil {
+		if err := writeInitramfs(filepath.Join(stage, k.initramfs), mods, append(append([]string{}, commonModules...), piModules...), in, piExtra); err != nil {
 			return r, fmt.Errorf("%s: %w", p.Name, err)
 		}
 	}
@@ -227,7 +249,7 @@ func Build(o Options) (Result, error) {
 	if err := os.WriteFile(filepath.Join(stage, SunxiDir, Zero2WDTB), dtb, 0o644); err != nil {
 		return r, err
 	}
-	if err := writeInitramfs(filepath.Join(stage, SunxiDir, "initrd.img"), smods, sunxiModules, in); err != nil {
+	if err := writeInitramfs(filepath.Join(stage, SunxiDir, "initrd.img"), smods, sunxiModules, in, nil); err != nil {
 		return r, fmt.Errorf("%s: %w", o.Packages.KernelSunxi.Name, err)
 	}
 	if err := os.MkdirAll(filepath.Join(stage, "extlinux"), 0o755); err != nil {
@@ -260,7 +282,7 @@ func Build(o Options) (Result, error) {
 	if err := copyFile(filepath.Join(virt, "boot", "vmlinuz-"+mods.release), r.Kernel); err != nil {
 		return r, err
 	}
-	if err := writeInitramfs(r.Initrd, mods, append(append([]string{}, commonModules...), virtModules...), in); err != nil {
+	if err := writeInitramfs(r.Initrd, mods, append(append([]string{}, commonModules...), virtModules...), in, supplicant); err != nil {
 		return r, fmt.Errorf("%s: %w", o.Packages.KernelVirt.Name, err)
 	}
 
@@ -349,8 +371,8 @@ type initramfsInput struct {
 
 // writeInitramfs writes a gzip-compressed cpio holding the console for one kernel: init
 // (the dashboard), busybox, the panel's firmware, the modules named with everything they
-// need, and the order to load them in.
-func writeInitramfs(path string, mods *modules, names []string, in initramfsInput) error {
+// need, the order to load them in, and the extra files (the Wi-Fi), when there are any.
+func writeInitramfs(path string, mods *modules, names []string, in initramfsInput, extra *tree) error {
 	order, err := mods.resolve(names)
 	if err != nil {
 		return err
@@ -396,6 +418,22 @@ func writeInitramfs(path string, mods *modules, names []string, in initramfsInpu
 		list.WriteString(p + "\n")
 	}
 	c.file(initramfs.ModuleList, 0o644, []byte(list.String()))
+	if extra != nil {
+		for _, p := range extra.paths() {
+			var parents []string
+			for d := filepath.Dir(p); d != "/"; d = filepath.Dir(d) {
+				parents = append([]string{d}, parents...)
+			}
+			for _, d := range parents {
+				dir(d)
+			}
+			if target, ok := extra.links[p]; ok {
+				c.symlink(p, target)
+			} else {
+				c.file(p, extra.perms[p], extra.files[p])
+			}
+		}
+	}
 	if err := c.close(); err != nil {
 		return err
 	}

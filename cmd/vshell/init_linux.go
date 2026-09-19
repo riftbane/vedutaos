@@ -499,8 +499,3 @@ func (s *system) respawn(tty string) {
 		time.Sleep(time.Second)
 	}
 }
-
-func fileOK(p string) bool {
-	fi, err := os.Stat(p)
-	return err == nil && fi.Mode().IsRegular()
-}

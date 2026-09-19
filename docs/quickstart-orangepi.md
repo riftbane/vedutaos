@@ -62,8 +62,10 @@ changed.
 ## 3. Switch it on
 
 The dashboard appears on the panel. The D-pad moves, A starts a game, Home returns to the
-dashboard, Select on the dashboard opens the menu, whose POWER OFF switches the console off.
-The card is never written, so the power can be cut at any time.
+dashboard, Select (reported as Start, the menu) on the dashboard opens the menu, whose POWER
+OFF switches the console off. Switch it off that way rather than cutting the power: games
+save on the card. The Wi-Fi screen says there is no Wi-Fi: the board's radio has no driver
+in the image yet.
 
 ## What still needs checking on the board
 

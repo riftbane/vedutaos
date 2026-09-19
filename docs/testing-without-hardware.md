@@ -75,8 +75,10 @@ A Raspberry Pi 4 or 5 costs less than the time any substitute takes. If the targ
 - That the panel's start-up sequence, overlay and wiring bring the panel up, the right way
   round.
 - That the SPI bus sustains 20 Hz, and whether tearing shows without double buffering.
-- The real button codes of the Rii GP100, including whether Select and Start are where the
-  exit chord assumes.
+- The real button codes of the Rii GP100: the engine reads it as the SNES-style pads SDL's
+  database lists (A second, B third, Select ninth, Start tenth).
+- The Wi-Fi on the boards: `brcmfmac` loading Raspberry Pi's firmware, a scan, WPA2 with a
+  real access point. QEMU's simulated radios test everything above the driver.
 - Unplugging the pad mid-game, and what the kernel really does on `SYN_DROPPED`.
 - Legibility and colour on the real panel. The reference images pin pixel values, not what
   gamma and viewing angle do to them at 320×240.

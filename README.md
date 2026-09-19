@@ -57,6 +57,7 @@ USB stick labelled `VEDUTA`, which the console takes instead when it is plugged 
 | `vedutaos/debug` | while present, a shell on the serial port and on tty2, optional |
 | `vedutaos/vshell` | a dashboard replacing the image's while it is there: how a console is updated from a PC |
 | `vedutaos/release` | which image wrote the card |
+| `vedutaos/wifi.json` | the Wi-Fi networks the console joined, with their WPA keys; written by the console |
 
 `vedutaos card <dir>` writes these; a folder dragged into `games` works just as well. The
 image's own files (`config.txt` with the panel's block, the kernels, the firmware) sit
@@ -96,10 +97,14 @@ later than the console's Lua API level is listed, and says to update VedutaOS wh
 
 ## The controls
 
-On the dashboard the D-pad moves, A starts the game, and Select opens the menu (A chooses,
-B or Cancel closes it), whose POWER OFF switches the console off. In a game, Home returns
+On the dashboard the D-pad moves, A starts the game, and Start opens the menu (A chooses,
+B or Cancel closes it), whose POWER OFF switches the console off. **SETTINGS**, the last row
+of the list, holds the Wi-Fi: the networks in range, a password typed on an on-screen
+keyboard, the networks joined remembered on the card. A USB pad's Select returns from a
+game, and its Start is the game's menu; the handheld's Select button is its menu too
+(reported as Start). In a game, Home returns
 to the dashboard; on the dashboard it does nothing. A keyboard stands in for the buttons:
-arrows or W A S D, Space or Z for A, X or Shift for B, Enter or Tab for Select, Escape or
+arrows or W A S D, Space or Z for A, X or Shift for B, Enter or Tab for Start, Escape or
 Backspace for Cancel, Ctrl+Q for Home.
 
 ## How the console starts

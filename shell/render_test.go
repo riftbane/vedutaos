@@ -12,6 +12,7 @@ import (
 	"github.com/riftbane/veduta/v2/gfx/soft"
 	"github.com/riftbane/veduta/v2/sprite"
 	"github.com/riftbane/vedutaos/card"
+	"github.com/riftbane/vedutaos/wifi"
 )
 
 var update = flag.Bool("update-golden", false, "rewrite the reference images")
@@ -121,6 +122,19 @@ func TestDrawGolden(t *testing.T) {
 		{"damaged", State{Cards: broken, Sel: 1}},
 		{"notice", State{Cards: games("Cave of Gems"), Notice: "GAME STOPPED: EXIT CODE 2"}},
 		{"menu", State{Cards: games("Cave of Gems", "Sky Race", "Tunnel"), Sel: 1, Menu: true}},
+		{"settings-row", State{Cards: games("Cave of Gems", "Sky Race"), Sel: 2}},
+		{"settings", State{Screen: Settings, Version: "v0.5.0-rc.9", WiFi: wifi.Status{State: wifi.Connected, SSID: "Home", IP: "192.168.1.23"}}},
+		{"wifi", State{Screen: WiFi, NetSel: 1, WiFi: wifi.Status{State: wifi.Connected, SSID: "Home", IP: "192.168.1.23", Networks: []wifi.Network{
+			{SSID: "Home", Signal: -45, Security: wifi.PSK, Saved: true},
+			{SSID: "Vodafone-A1B2C3D4 with a very long name", Signal: -60, Security: wifi.PSK},
+			{SSID: "Cafe", Signal: -70, Security: wifi.Open},
+			{SSID: "Office", Signal: -85, Security: wifi.Unsupported},
+		}}}},
+		{"wifi-searching", State{Screen: WiFi, WiFi: wifi.Status{State: wifi.Disconnected, Scanning: true}}},
+		{"wifi-wrong", State{Screen: WiFi, WiFi: wifi.Status{State: wifi.WrongPassword, SSID: "Home", Networks: []wifi.Network{{SSID: "Home", Signal: -45, Security: wifi.PSK}}}}},
+		{"wifi-none", State{Screen: WiFi, WiFi: wifi.Status{State: wifi.NoAdapter}}},
+		{"password", State{Screen: Password, Target: wifi.Network{SSID: "Home"}, Keys: Keyboard{Text: "hunter2", Row: 2, Col: 3}}},
+		{"password-symbols", State{Screen: Password, Target: wifi.Network{SSID: "Home"}, Keys: Keyboard{Text: "a very long password that scrolls off", Row: actionRow, Col: 4, Page: 2}}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			golden(t, c.name, render(t, 320, 240, c.s, nil))

@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## v0.5.0-rc.9 — 2026-09-19
+
+Built against engine v2.0.0-rc.15. `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e`
+pass, the e2e test joining a WPA2 network on QEMU's simulated radios.
+
+### Added
+
+- Settings, the last row of the dashboard's list, with the Wi-Fi: the networks in range
+  (signal, lock, saved, joined), a password typed on an on-screen keyboard (every printable
+  ASCII character, three pages), the console's state and address. Joined networks are
+  remembered in `vedutaos/wifi.json` on the card, as their WPA key rather than the
+  password, and joined again by themselves; a password that no longer works is forgotten.
+  Package `wifi` drives wpa_supplicant through its control socket; busybox's udhcpc gets
+  the address.
+- The image carries Debian's wpa_supplicant with every library it loads, found from
+  `DT_NEEDED` (twelve pinned packages), the Raspberry Pis' radio firmware (Raspberry Pi's
+  `firmware-brcm80211`, board files as links, the 43455's alternative resolved as its
+  package would), `brcmfmac` and its vendor modules, and a udhcpc script. QEMU's kernel gets
+  `mac80211_hwsim`: the e2e test makes the second radio a WPA2 access point from the debug
+  shell and joins it from the dashboard with the keyboard.
+- The serial port says each change of screen (`vedutaos: screen wi-fi`) and what the
+  Wi-Fi does (`vedutaos: wifi: …`).
+
+### Changed
+
+- A USB pad's Select leaves a game and its Start is the game's menu (engine rc.15); SNES
+  pads such as the Rii GP100 now read A, B, Select and Start where they are. The handheld's
+  Select button reports `BTN_START`, the menu. The dashboard's menu is on Start.
+
 ## v0.5.0-rc.8 — 2026-09-18
 
 Built against engine v2.0.0-rc.14: maps draw autotiles (hand-drawn island and lake tiles,

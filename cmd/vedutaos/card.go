@@ -142,7 +142,7 @@ func errOrEmpty(err error) string {
 // describe says what the card now holds, listing the games as the console will list them.
 func describe(out io.Writer, dir string) error {
 	fmt.Fprintf(out, "\nCard in %s\n", dir)
-	for _, f := range []struct{ name, what string }{{card.VShell, "a dashboard replacing the image's"}, {card.EnvFile, "settings"}, {card.DebugFile, "shells on the serial port and tty2"}, {card.ReleaseFile, "the image that wrote the card"}} {
+	for _, f := range []struct{ name, what string }{{card.VShell, "a dashboard replacing the image's"}, {card.EnvFile, "settings"}, {card.DebugFile, "shells on the serial port and tty2"}, {card.ReleaseFile, "the image that wrote the card"}, {card.WiFiFile, "the Wi-Fi networks the console joined"}} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f.name))); err == nil {
 			fmt.Fprintf(out, "  %-24s %s\n", f.name, f.what)
 		}

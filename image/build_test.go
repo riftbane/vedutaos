@@ -30,7 +30,21 @@ func TestBuild(t *testing.T) {
 		served[url] = deb
 		return Package{Name: name, Version: "1", URLs: []string{url}, SHA256: sumOf(deb)}
 	}
-	pi := map[string][]string{"panel_mipi_dbi": {"drm"}, "drm": nil, "spi_bcm2835": nil, "spi_dw_mmio": {"spi_dw"}, "spi_dw": nil, "gpio_backlight": nil, "pwm_bl": nil, "gpio_keys": nil}
+	pi := map[string][]string{"panel_mipi_dbi": {"drm"}, "drm": nil, "spi_bcm2835": nil, "spi_dw_mmio": {"spi_dw"}, "spi_dw": nil, "gpio_backlight": nil, "pwm_bl": nil, "gpio_keys": nil,
+		"brcmfmac": {"cfg80211"}, "cfg80211": nil, "brcmfmac_wcc": {"brcmfmac"}, "brcmfmac_cyw": {"brcmfmac"}, "brcmfmac_bca": {"brcmfmac"}}
+	// The Raspberry Pi firmware package, laid out as it is: board names linking to the
+	// generic files, and the Pi 4 and 5's to a link its postinst makes.
+	fw := "usr/lib/firmware/"
+	wifiFirmware := map[string][]byte{
+		fw + "cypress/cyfmac43455-sdio-standard.bin":                  []byte("43455 standard"),
+		fw + "cypress/cyfmac43455-sdio-minimal.bin":                   []byte("43455 minimal"),
+		fw + "brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin":      []byte("-> ../cypress/cyfmac43455-sdio.bin"),
+		fw + "brcm/brcmfmac43455-sdio.raspberrypi,4-model-b.bin":      []byte("-> ../cypress/cyfmac43455-sdio.bin"),
+		fw + "brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.txt":      []byte("nvram"),
+		fw + "brcm/brcmfmac43436-sdio.bin":                            []byte("43436"),
+		fw + "brcm/brcmfmac43436-sdio.raspberrypi,model-zero-2-w.bin": []byte("-> brcmfmac43436-sdio.bin"),
+		fw + "brcm/brcmfmac4356-pcie.bin":                             []byte("not a Pi's"),
+	}
 	piBuiltin := []string{"vfat", "nls_cp437", "nls_ascii", "xhci_pci", "usbhid", "hid_generic", "evdev"}
 	pkgs := Packages{
 		Firmware:   pin("raspi-firmware", map[string][]byte{"usr/lib/raspi-firmware/start.elf": []byte("start"), "usr/lib/raspi-firmware/bootcode.bin": []byte("boot"), "usr/lib/raspi-firmware/fixup.dat": []byte("fix")}),
@@ -42,9 +56,12 @@ func TestBuild(t *testing.T) {
 		UBootZero2W: pin("u-boot-zero2w", map[string][]byte{"usr/lib/linux-u-boot-current-orangepizero2w/u-boot-sunxi-with-spl.bin": []byte("eGON.BT0 u-boot")}),
 		KernelVirt: pin("linux-virt", fakeKernel(t, "6.12.0-arm64", map[string][]string{
 			"virtio_blk": nil, "virtio_gpu": {"drm"}, "drm": nil, "xhci_pci": {"xhci_hcd"}, "xhci_hcd": nil,
+			"mac80211_hwsim": {"mac80211"}, "mac80211": {"cfg80211"}, "cfg80211": nil, "ccm": nil, "cmac": nil,
 			"usbhid": {"hid"}, "hid_generic": {"hid"}, "hid": nil, "evdev": nil, "vfat": {"fat"}, "fat": nil, "nls_cp437": nil, "nls_ascii": nil,
 		}, nil)),
-		Busybox: pin("busybox-static", map[string][]byte{"usr/bin/busybox": []byte("busybox!")}),
+		Busybox:      pin("busybox-static", map[string][]byte{"usr/bin/busybox": []byte("busybox!")}),
+		WiFiFirmware: pin("firmware-brcm80211", wifiFirmware),
+		WiFi:         []Package{pin("wpasupplicant", map[string][]byte{"usr/sbin/wpa_supplicant": minimalELF(elf.ET_EXEC, elf.EM_AARCH64)})},
 	}
 	get := func(url string) (io.ReadCloser, error) {
 		b, ok := served[url]
@@ -163,12 +180,21 @@ func TestBuild(t *testing.T) {
 	}
 	sorted := append([]string{}, names...)
 	sort.Strings(sorted)
-	want := []string{"drm", "evdev", "fat", "hid", "hid_generic", "nls_ascii", "nls_cp437", "usbhid", "vfat", "virtio_blk", "virtio_gpu", "xhci_hcd", "xhci_pci"}
+	want := []string{"ccm", "cfg80211", "cmac", "drm", "evdev", "fat", "hid", "hid_generic", "mac80211", "mac80211_hwsim", "nls_ascii", "nls_cp437", "usbhid", "vfat", "virtio_blk", "virtio_gpu", "xhci_hcd", "xhci_pci"}
 	if strings.Join(sorted, " ") != strings.Join(want, " ") {
 		t.Errorf("virt modules %v, want %v", sorted, want)
 	}
 	if indexOf(names, "hid") > indexOf(names, "usbhid") || indexOf(names, "fat") > indexOf(names, "vfat") {
 		t.Errorf("dependencies load late: %v", names)
+	}
+	// QEMU's has wpa_supplicant for its simulated radios, and no Raspberry Pi firmware.
+	for _, f := range []string{initramfs.WPASupplicant, initramfs.DHCPScript} {
+		if e, ok := files[strings.TrimPrefix(f, "/")]; !ok || e.Mode != modeFile|0o755 {
+			t.Errorf("%s missing, or not executable", f)
+		}
+	}
+	if _, ok := files["lib/firmware/brcm"]; ok {
+		t.Error("QEMU's initramfs has the Raspberry Pis' Wi-Fi firmware")
 	}
 	for _, d := range []string{"dev", "proc", "sys", "boot/firmware/games", "tmp"} {
 		if e, ok := files[d]; !ok || e.Mode&modeDir == 0 {
@@ -183,7 +209,9 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("mcopy: %v\n%s", err, out)
 	}
 	piFiles := map[string]bool{}
+	piEntries := map[string]cpioEntry{}
 	for _, e := range readInitramfs(t, filepath.Join(work, "initramfs8")) {
+		piEntries[e.Name] = e
 		if strings.HasSuffix(e.Name, ".ko") {
 			if !strings.HasPrefix(e.Name, "lib/modules/6.18.0-v8/kernel/") {
 				t.Errorf("initramfs8 holds %s", e.Name)
@@ -193,7 +221,29 @@ func TestBuild(t *testing.T) {
 			piFiles[e.Name] = true
 		}
 	}
-	for _, want := range []string{"panel_mipi_dbi", "drm", "spi_bcm2835", "spi_dw_mmio", "spi_dw", "gpio_keys", "init"} {
+	// The radio's firmware: the board names as links to the files, each file put in once,
+	// the alternative a package install would pick followed.
+	for name, want := range map[string]string{
+		"lib/firmware/brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin":      "/lib/firmware/cypress/cyfmac43455-sdio-standard.bin",
+		"lib/firmware/brcm/brcmfmac43455-sdio.raspberrypi,4-model-b.bin":      "/lib/firmware/cypress/cyfmac43455-sdio-standard.bin",
+		"lib/firmware/brcm/brcmfmac43436-sdio.raspberrypi,model-zero-2-w.bin": "/lib/firmware/brcm/brcmfmac43436-sdio.bin",
+	} {
+		if e, ok := piEntries[name]; !ok || e.Mode&0o170000 != modeLink || string(e.Data) != want {
+			t.Errorf("%s: %+v, want a link to %s", name, e, want)
+		}
+		if e, ok := piEntries[strings.TrimPrefix(want, "/")]; !ok || e.Mode&0o170000 != modeFile {
+			t.Errorf("%s missing", want)
+		}
+	}
+	if e := piEntries["lib/firmware/brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.txt"]; string(e.Data) != "nvram" {
+		t.Error("the Pi 5's nvram file is missing")
+	}
+	for _, none := range []string{"lib/firmware/brcm/brcmfmac4356-pcie.bin", "lib/firmware/cypress/cyfmac43455-sdio-minimal.bin"} {
+		if _, ok := piEntries[none]; ok {
+			t.Errorf("initramfs8 holds %s, no Pi's", none)
+		}
+	}
+	for _, want := range []string{"panel_mipi_dbi", "drm", "spi_bcm2835", "spi_dw_mmio", "spi_dw", "gpio_keys", "brcmfmac", "brcmfmac_wcc", "cfg80211", "init", "bin/wpa_supplicant", "etc/udhcpc.script"} {
 		if !piFiles[want] {
 			t.Errorf("initramfs8 lacks %s", want)
 		}

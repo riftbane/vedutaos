@@ -56,7 +56,8 @@ func module(name string, deps ...string) []byte {
 	return minimalELF(elf.ET_REL, elf.EM_AARCH64, "name="+name, "depends="+strings.Join(deps, ","), "license=GPL")
 }
 
-// fakeDeb returns a .deb holding the files given (a path ending in / is a directory).
+// fakeDeb returns a .deb holding the files given (a path ending in / is a directory, and
+// content starting with "-> " a symbolic link to the rest).
 func fakeDeb(files map[string][]byte) []byte {
 	var data bytes.Buffer
 	gz := gzip.NewWriter(&data)
@@ -64,6 +65,10 @@ func fakeDeb(files map[string][]byte) []byte {
 	for name, content := range files {
 		if strings.HasSuffix(name, "/") {
 			tw.WriteHeader(&tar.Header{Name: "./" + name, Typeflag: tar.TypeDir, Mode: 0o755})
+			continue
+		}
+		if target, ok := strings.CutPrefix(string(content), "-> "); ok {
+			tw.WriteHeader(&tar.Header{Name: "./" + name, Typeflag: tar.TypeSymlink, Linkname: target, Mode: 0o777})
 			continue
 		}
 		mode := int64(0o644)

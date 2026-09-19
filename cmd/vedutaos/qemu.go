@@ -211,7 +211,7 @@ func qemuCommand(args []string, stdout, stderr io.Writer) int {
 	if *printCmd {
 		return 0
 	}
-	fmt.Fprint(stdout, "\nIn the window: arrows move, Space is A (starts a game), X is B, Enter is Select (the menu,\nwith POWER OFF), Escape is Cancel, Ctrl+Q is Home (leaves a game).\nHere: the console's serial port. Ctrl-A x stops the machine at once.\n\n")
+	fmt.Fprint(stdout, "\nIn the window: arrows move, Space is A (starts a game), X is B, Enter is Start (the menu,\nwith POWER OFF), Escape is Cancel, Ctrl+Q is Home (leaves a game). Settings, with the Wi-Fi,\nare the last row of the list.\nHere: the console's serial port. Ctrl-A x stops the machine at once.\n\n")
 	cmd := exec.Command(qemu, argv...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, stderr
 	tieToParent(cmd)

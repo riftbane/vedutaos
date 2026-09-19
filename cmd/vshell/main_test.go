@@ -146,10 +146,11 @@ func TestRunReportsAFailedGame(t *testing.T) {
 	}
 }
 
-// TestRunWithoutGames: an empty card shows the dashboard and can still be left.
+// TestRunWithoutGames: an empty card shows the dashboard, whose settings still open, and
+// can still be left.
 func TestRunWithoutGames(t *testing.T) {
 	dir := t.TempDir()
-	w := &fakeWindow{w: 320, h: 240, events: [][]platform.Event{press(sim.ButtonA), press(sim.ButtonSelect), {{Kind: platform.Release, Button: sim.ButtonA}}, press(sim.ButtonA)}}
+	w := &fakeWindow{w: 320, h: 240, events: [][]platform.Event{press(sim.ButtonA), press(sim.ButtonB), press(sim.ButtonSelect), {{Kind: platform.Release, Button: sim.ButtonA}}, press(sim.ButtonA)}}
 	defer swap(&openWindow, func(platform.Options) (platform.Window, error) { return w, nil })()
 	defer swap(&launch, func(card.Card) error { t.Error("launched a game that is not there"); return nil })()
 	if err := run(dir); err != nil {

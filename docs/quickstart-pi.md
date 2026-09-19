@@ -42,8 +42,23 @@ Other things a card can carry, each written only when asked:
 ## 3. Switch it on
 
 The dashboard appears on the panel within seconds. The D-pad moves, A starts a game, Home
-(or Select and Start together on a pad without Home) returns to the dashboard, and Select
-on the dashboard opens the menu, whose POWER OFF switches the console off. The card is never written, so the power can be cut at any time.
+(or Select on a USB pad) returns to the dashboard, and Start (the handheld's Select) opens
+the game's menu in a game and the console's menu on the dashboard, whose POWER OFF switches
+the console off. Switch it off that way rather than cutting the power: games save on the
+card, and so does the Wi-Fi.
+
+## 4. Wi-Fi
+
+**SETTINGS**, the last row of the list, holds **WI-FI**: the networks in range, strongest
+first, with their signal and a lock for those with a password. A on one asks for its
+password on an on-screen keyboard (the D-pad moves, A types, B deletes, **SHIFT** and
+**#+=** change the letters, Start or **JOIN** joins); an open network is joined at once. The
+console remembers a network it joined in `vedutaos/wifi.json` on the card (its WPA key, not
+the password) and joins it again by itself when it is in range. WPA2 and WPA3 networks that
+also take WPA2 work; enterprise (802.1X), WEP and WPA3-only networks do not. The Raspberry
+Pi 5, 4, 3 B+ and Zero 2 W radios are driven by `brcmfmac` with Raspberry Pi's firmware; the
+Orange Pi Zero 2W's radio has no driver in the image yet. On the serial port the lines
+`vedutaos: wifi: …` say what it does.
 
 A USB stick labelled `VEDUTA` with a `games` folder on it is a card too: plugged in at
 start, the console lists its games instead of the SD card's.
@@ -67,7 +82,7 @@ header's; GPIO numbers are BCM's.
 
 The buttons, each between its pin and ground, are wired as on the Orange Pi Zero 2W, whose
 header is the same ([the table](quickstart-orangepi.md#2-wiring)): Up GPIO 5, Down 6, Left
-13, Right 19, A 26, B 21, Select 20, Cancel 16, Home 12.
+13, Right 19, A 26, B 21, Select 20 (the menu, reported as Start), Cancel 16, Home 12.
 
 Wired differently, or with a panel that needs other settings, build an image with them:
 `vedutaos image --pins dc=22,reset=27,backlight=none,a=17 --rotate 270 --rgb --invert

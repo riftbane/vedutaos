@@ -65,9 +65,12 @@ a Mac with Apple silicon, it takes seconds.
 ## Using it
 
 - In the QEMU window the keyboard is the console's buttons: arrows or W A S D the D-pad,
-  Space or Z A, X or Shift B, Enter or Tab Select, Escape or Backspace Cancel, **Ctrl+Q**
-  Home. On the dashboard A starts a game and Select opens the menu, whose POWER OFF
+  Space or Z A, X or Shift B, Enter or Tab Start, Escape or Backspace Cancel, **Ctrl+Q**
+  Home. On the dashboard A starts a game and Start opens the menu, whose POWER OFF
   switches the console off, which ends QEMU. In a game, Ctrl+Q returns to the dashboard.
+- The kernel has two simulated Wi-Fi radios: **SETTINGS**, **WI-FI** shows the first. With
+  `--debug`, the serial port's shell can make the second an access point, as the e2e test
+  does (`test/e2e`).
 - In the terminal: the console's serial port. The lines `vedutaos: …` say what the console
   did — the modules loaded, the card found, the dashboard, each game started and ended.
   **Ctrl-A x** stops the machine at once.

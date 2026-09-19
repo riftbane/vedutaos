@@ -35,6 +35,7 @@ import (
 	"github.com/riftbane/vedutaos/card"
 	"github.com/riftbane/vedutaos/initramfs"
 	"github.com/riftbane/vedutaos/shell"
+	"github.com/riftbane/vedutaos/wifi"
 )
 
 // version is set by the image build (-ldflags "-X main.version=v0.3.0").
@@ -46,6 +47,10 @@ const tickRate = 20
 // rescan is how often the dashboard, while shown, reads the card again: a card can be
 // mounted after the dashboard came up, and init keeps the text console off the panel.
 const rescan = 2 * time.Second
+
+// wifiRescan is how often the networks in range are looked for while the Wi-Fi screen is
+// shown.
+const wifiRescan = 10 * time.Second
 
 // defaultGames is where a card's games are: the partition a PC sees when the card is
 // plugged into it.
@@ -62,7 +67,10 @@ var (
 // leaveOnClose is whether the player's close (Ctrl+Q, a window's close button, Home on a
 // pad) leaves the dashboard. On the console, where the dashboard is init or init's child,
 // it does not: Home there means the dashboard itself, and switching off is in the menu.
-var leaveOnClose = os.Getpid() != 1 && os.Getppid() != 1
+var leaveOnClose = !onConsole
+
+// onConsole is whether this program is the console's dashboard: init, or init's child.
+var onConsole = os.Getpid() == 1 || os.Getppid() == 1
 
 // playCommand is the argument that makes this program play the script game in a folder.
 const playCommand = "play"
@@ -136,9 +144,47 @@ func isChild(pid int) bool {
 	return children.pids[pid]
 }
 
+// network is the console's Wi-Fi: nil on a desktop, where the dashboard leaves the
+// machine's network alone, and on an image with no wpa_supplicant. It is started once, and
+// keeps running while games play and when the dashboard is started again.
+var (
+	network     *wifi.Manager
+	networkOnce sync.Once
+)
+
+// startWiFi starts the Wi-Fi on the console. The networks it joins are remembered on the
+// card when the card can be written.
+func startWiFi() {
+	if !onConsole || !fileOK(initramfs.WPASupplicant) {
+		return
+	}
+	store := &wifi.Store{Path: filepath.Join(initramfs.CardMount, filepath.FromSlash(card.WiFiFile))}
+	if os.Getenv(initramfs.SavesEnv) != "" {
+		store.Write = filepath.Join(initramfs.CardWrite, filepath.FromSlash(card.WiFiFile))
+	}
+	network = wifi.Start(wifi.Options{
+		SysNet:     "/sys/class/net",
+		Supplicant: initramfs.WPASupplicant,
+		Env:        []string{"LD_LIBRARY_PATH=" + initramfs.Libs},
+		Busybox:    initramfs.Busybox,
+		DHCPScript: initramfs.DHCPScript,
+		RunDir:     "/tmp/wifi",
+		Store:      store,
+		Start:      startChild,
+		Wait:       waitChild,
+		Say:        say,
+	})
+}
+
+func fileOK(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.Mode().IsRegular()
+}
+
 // run shows the dashboard until the player leaves it, launching games in between.
 func run(dir string) error {
-	var state shell.State
+	networkOnce.Do(startWiFi)
+	state := shell.State{Version: version}
 	for {
 		// The card is read again every time: a game may have been added or removed while
 		// another was playing, and a folder can go missing under us.
@@ -193,6 +239,7 @@ func show(dir string, state shell.State) (shell.State, shell.Action, error) {
 		period   = time.Second / tickRate
 		next     = time.Now()
 		nextScan = time.Now().Add(rescan)
+		nextWiFi = time.Now().Add(wifiRescan)
 	)
 	for {
 		if time.Now().After(nextScan) {
@@ -221,9 +268,26 @@ func show(dir string, state shell.State) (shell.State, shell.Action, error) {
 				in.ReleaseAll()
 			}
 		}
+		state.WiFi = network.Status()
+		if state.Screen == shell.WiFi && time.Now().After(nextWiFi) {
+			network.Scan()
+			nextWiFi = time.Now().Add(wifiRescan)
+		}
 		var action shell.Action
+		was := state.Screen
 		state, action = shell.Step(state, in.Next())
-		if action != shell.Stay {
+		if state.Screen != was {
+			say("screen %s", state.Screen)
+		}
+		switch action {
+		case shell.Stay:
+		case shell.Scan:
+			network.Scan()
+			nextWiFi = time.Now().Add(wifiRescan)
+		case shell.Join:
+			network.Join(state.Target.SSID, state.Keys.Text)
+			state.Keys = shell.Keyboard{} // the password is not kept
+		default:
 			return state, action, nil
 		}
 		w, h := win.Size()

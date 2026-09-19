@@ -31,12 +31,14 @@ type Line struct {
 	Code uint32
 }
 
-// Key codes of linux/input-event-codes.h the buttons report.
+// Key codes of linux/input-event-codes.h the buttons report. The handheld's Select is the
+// game's menu, which the engine reads from BTN_START: its BTN_SELECT is a USB pad's Select,
+// which leaves the game.
 const (
 	btnDPadUp = 0x220 // BTN_DPAD_UP, then DOWN, LEFT, RIGHT
 	btnSouth  = 0x130 // A
 	btnEast   = 0x131 // B
-	btnSelect = 0x13a
+	btnStart  = 0x13b // the menu (Select on the handheld)
 	btnMode   = 0x13c // Home
 	keyBack   = 158   // Cancel
 )
@@ -46,7 +48,7 @@ func (p *Pins) Lines() []Line {
 	return []Line{
 		{"dc", &p.DC, 0}, {"reset", &p.Reset, 0}, {"backlight", &p.Backlight, 0},
 		{"up", &p.Up, btnDPadUp}, {"down", &p.Down, btnDPadUp + 1}, {"left", &p.Left, btnDPadUp + 2}, {"right", &p.Right, btnDPadUp + 3},
-		{"a", &p.A, btnSouth}, {"b", &p.B, btnEast}, {"select", &p.Select, btnSelect}, {"cancel", &p.Cancel, keyBack}, {"home", &p.Home, btnMode},
+		{"a", &p.A, btnSouth}, {"b", &p.B, btnEast}, {"select", &p.Select, btnStart}, {"cancel", &p.Cancel, keyBack}, {"home", &p.Home, btnMode},
 	}
 }
 
