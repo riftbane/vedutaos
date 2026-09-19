@@ -15,9 +15,11 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +37,9 @@ import (
 	"github.com/riftbane/vedutaos/card"
 	"github.com/riftbane/vedutaos/initramfs"
 	"github.com/riftbane/vedutaos/shell"
+	"github.com/riftbane/vedutaos/update"
 	"github.com/riftbane/vedutaos/wifi"
+	_ "golang.org/x/crypto/x509roots/fallback" // the certificates HTTPS is checked with: the console has none of its own
 )
 
 // version is set by the image build (-ldflags "-X main.version=v0.3.0").
@@ -85,7 +89,9 @@ func main() {
 	openStatus()
 	dir := flag.String("games", envOr("VEDUTAOS_GAMES", defaultGames), "directory holding the game folders")
 	flag.Parse()
-	if err := run(*dir); err != nil {
+	if err := run(*dir); errors.Is(err, errRestart) {
+		restartConsole()
+	} else if err != nil {
 		fmt.Fprintln(os.Stderr, "vshell:", err)
 		os.Exit(1)
 	}
@@ -181,10 +187,72 @@ func fileOK(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
+// errRestart is run's word that the console must restart: an update was installed.
+var errRestart = errors.New("restart the console")
+
+// updater installs updates from GitHub, on the console only.
+var updater update.Updater
+
+// channelFile is where the software channel is kept, as the card is read.
+func channelFile() string {
+	return filepath.Join(initramfs.CardMount, filepath.FromSlash(card.ChannelFile))
+}
+
+// cardWritable reports whether the card can be written, as init found it.
+func cardWritable() bool { return os.Getenv(initramfs.SavesEnv) != "" }
+
+// updateOptions are what an update on this console works with.
+func updateOptions(ch update.Channel) update.Options {
+	return update.Options{
+		Client:  &http.Client{Timeout: 30 * time.Minute},
+		Channel: ch,
+		Current: version,
+		Card:    initramfs.CardWrite,
+		Archive: filepath.Join(initramfs.CardWrite, filepath.FromSlash(card.UpdateFile)),
+		Ready:   updateReady,
+		Sync:    syncDisks,
+		Pause:   3 * time.Second,
+	}
+}
+
+// updateReady says why an update cannot start: not the console, a card that cannot be
+// written, no network, or a clock HTTPS cannot trust (a board without a clock battery
+// starts in 1970), which is set from the network first.
+func updateReady() error {
+	switch {
+	case !onConsole:
+		return errors.New("updates are installed on the console only")
+	case !cardWritable():
+		return errors.New("the card cannot be written")
+	case network.Status().State != wifi.Connected || network.Status().IP == "":
+		return errors.New("connect to wi-fi first")
+	}
+	if time.Now().Year() >= 2026 {
+		return nil
+	}
+	say("update: setting the clock")
+	cmd := exec.Command(initramfs.Busybox, "ntpd", "-n", "-q", "-p", "pool.ntp.org")
+	if err := startChild(cmd); err == nil {
+		done := make(chan struct{})
+		go func() { waitChild(cmd); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			cmd.Process.Kill()
+			<-done
+		}
+	}
+	if time.Now().Year() < 2026 {
+		return errors.New("could not set the clock from the network")
+	}
+	say("update: the clock is %s", time.Now().UTC().Format(time.RFC3339))
+	return nil
+}
+
 // run shows the dashboard until the player leaves it, launching games in between.
 func run(dir string) error {
 	networkOnce.Do(startWiFi)
-	state := shell.State{Version: version}
+	state := shell.State{Version: version, Channel: update.LoadChannel(channelFile(), version)}
 	for {
 		// The card is read again every time: a game may have been added or removed while
 		// another was playing, and a folder can go missing under us.
@@ -198,6 +266,9 @@ func run(dir string) error {
 			return err
 		}
 		state = next
+		if action == shell.Reboot {
+			return errRestart
+		}
 		if action != shell.Launch {
 			return nil // Quit, or the window was closed
 		}
@@ -269,6 +340,7 @@ func show(dir string, state shell.State) (shell.State, shell.Action, error) {
 			}
 		}
 		state.WiFi = network.Status()
+		state.Update = updater.Status()
 		if state.Screen == shell.WiFi && time.Now().After(nextWiFi) {
 			network.Scan()
 			nextWiFi = time.Now().Add(wifiRescan)
@@ -287,6 +359,19 @@ func show(dir string, state shell.State) (shell.State, shell.Action, error) {
 		case shell.Join:
 			network.Join(state.Target.SSID, state.Keys.Text)
 			state.Keys = shell.Keyboard{} // the password is not kept
+		case shell.SetChannel:
+			if !cardWritable() {
+				state.Notice = "THE CARD CANNOT BE WRITTEN"
+			} else if err := update.SaveChannel(filepath.Join(initramfs.CardWrite, filepath.FromSlash(card.ChannelFile)), state.Channel); err != nil {
+				state.Notice = notice(err)
+			} else {
+				say("update: channel %s", state.Channel)
+			}
+		case shell.CheckUpdate:
+			say("update: looking on the %s channel", state.Channel)
+			updater.Start(updateOptions(state.Channel))
+		case shell.CancelUpdate:
+			updater.Cancel()
 		default:
 			return state, action, nil
 		}

@@ -65,7 +65,7 @@ jobs:
           set -eu
           mkdir -p dist
           xz -T0 -c out/vedutaos.img > dist/vedutaos.img.xz
-          cp out/vmlinuz out/initrd.img dist/
+          cp out/vmlinuz out/initrd.img out/vedutaos-boot.tar.gz dist/
           (cd dist && sha256sum * > image-checksums.txt && cat image-checksums.txt)
           ls -la dist
 

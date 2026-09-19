@@ -60,6 +60,17 @@ Pi 5, 4, 3 B+ and Zero 2 W radios are driven by `brcmfmac` with Raspberry Pi's f
 Orange Pi Zero 2W's radio has no driver in the image yet. On the serial port the lines
 `vedutaos: wifi: …` say what it does.
 
+## 5. Updates
+
+**SOFTWARE CHANNEL** in the settings switches between STABLE (releases) and BETA
+(pre-releases too); A changes it. **INSTALL UPDATES**, with the Wi-Fi on a network, asks
+GitHub for the newest VedutaOS of the channel. When it is newer than the console's, it
+downloads its boot files onto the card (about 85 MB; B stops the download), checks them,
+replaces the kernels, the initramfs and the firmware, and restarts into the new version.
+Do not switch off while it says INSTALLING. Games, saves, the Wi-Fi and the panel's wiring
+stay as they are. A console without a clock battery sets its clock from the network first
+(`pool.ntp.org`), since HTTPS needs the date.
+
 A USB stick labelled `VEDUTA` with a `games` folder on it is a card too: plugged in at
 start, the console lists its games instead of the SD card's.
 

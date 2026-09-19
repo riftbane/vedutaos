@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## v0.5.0-rc.10 — 2026-09-19
+
+Built against engine v2.0.0-rc.15. `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e`
+pass. The first release a console can update from by itself.
+
+### Added
+
+- Settings: SOFTWARE CHANNEL (STABLE: releases; BETA: pre-releases too, the default on a
+  pre-release), kept in `vedutaos/channel`, and INSTALL UPDATES: package `update` asks
+  GitHub's API for the newest release of the channel that carries boot files, and when it
+  is newer than the console's downloads `vedutaos-boot.tar.gz` onto the card, checks it
+  against `image-checksums.txt`, writes every file beside the one it replaces and then
+  renames them over (a failure before that leaves the card as it was), keeps `config.txt`,
+  `cmdline.txt` and the buttons' overlay, syncs and restarts. The clock is set with
+  busybox's ntpd when it is before 2026; HTTPS uses Mozilla's roots built into vshell.
+- `vedutaos image` writes `vedutaos-boot.tar.gz`, the card's files without the games; the
+  image workflow attaches it to the release. Releases before this one carry none, so a
+  console updates from this version on.
+
 ## v0.5.0-rc.9 — 2026-09-19
 
 Built against engine v2.0.0-rc.15. `go test ./...` and `VEDUTAOS_E2E=1 go test ./test/e2e`

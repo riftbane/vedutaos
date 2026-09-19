@@ -11,6 +11,7 @@
 package image
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"debug/elf"
@@ -18,16 +19,19 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/riftbane/vedutaos/card"
 	"github.com/riftbane/vedutaos/initramfs"
 	"github.com/riftbane/vedutaos/install"
 	"github.com/riftbane/vedutaos/panel"
+	"github.com/riftbane/vedutaos/update"
 )
 
 // Options say what to build.
@@ -50,11 +54,12 @@ type Options struct {
 
 // Result names what Build wrote.
 type Result struct {
-	Image, Kernel, Initrd string
+	Image, Kernel, Initrd, Boot string
 }
 
 // What Build writes.
 const (
+	BootName    = update.BootArchive // the boot files, for a console to update itself
 	ImageName   = "vedutaos.img"
 	KernelName  = "vmlinuz"    // Debian's arm64 kernel, for QEMU
 	InitrdName  = "initrd.img" // its initramfs
@@ -318,6 +323,13 @@ func Build(o Options) (Result, error) {
 		return r, err
 	}
 
+	// The boot files alone, without the games, for consoles to update themselves.
+	r.Boot = filepath.Join(o.Out, BootName)
+	fmt.Fprintf(o.Verbose, "writing %s\n", r.Boot)
+	if err := writeBootArchive(stage, r.Boot); err != nil {
+		return r, err
+	}
+
 	// The image: sparse, so an empty 2 GB costs nothing on disk and nothing in the .xz.
 	r.Image = filepath.Join(o.Out, ImageName)
 	tmp := r.Image + ".part"
@@ -504,4 +516,63 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, b, 0o644)
+}
+
+// writeBootArchive writes the card's files, but for its games, as a gzip-compressed tar,
+// in name order so the same files give the same archive.
+func writeBootArchive(stage, dst string) error {
+	var names []string
+	err := filepath.WalkDir(stage, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(stage, p)
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			if rel == card.Games || rel == card.Saves {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		names = append(names, rel)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	sort.Strings(names)
+	tmp := dst + ".part"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	for _, n := range names {
+		b, err := os.ReadFile(filepath.Join(stage, filepath.FromSlash(n)))
+		if err != nil {
+			f.Close()
+			return err
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: n, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(b))}); err != nil {
+			f.Close()
+			return err
+		}
+		if _, err := tw.Write(b); err != nil {
+			f.Close()
+			return err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := gz.Close(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
 }

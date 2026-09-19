@@ -58,6 +58,7 @@ USB stick labelled `VEDUTA`, which the console takes instead when it is plugged 
 | `vedutaos/vshell` | a dashboard replacing the image's while it is there: how a console is updated from a PC |
 | `vedutaos/release` | which image wrote the card |
 | `vedutaos/wifi.json` | the Wi-Fi networks the console joined, with their WPA keys; written by the console |
+| `vedutaos/channel` | the software channel updates come from, `stable` or `beta`; written by the console |
 
 `vedutaos card <dir>` writes these; a folder dragged into `games` works just as well. The
 image's own files (`config.txt` with the panel's block, the kernels, the firmware) sit
@@ -100,7 +101,12 @@ later than the console's Lua API level is listed, and says to update VedutaOS wh
 On the dashboard the D-pad moves, A starts the game, and Start opens the menu (A chooses,
 B or Cancel closes it), whose POWER OFF switches the console off. **SETTINGS**, the last row
 of the list, holds the Wi-Fi: the networks in range, a password typed on an on-screen
-keyboard, the networks joined remembered on the card. A USB pad's Select returns from a
+keyboard, the networks joined remembered on the card. It also holds the software channel
+(STABLE takes releases, BETA pre-releases too) and INSTALL UPDATES, which asks GitHub for
+the newest VedutaOS of the channel and, when it is newer, downloads its boot files
+(`vedutaos-boot.tar.gz`, checked against the release's checksums), puts them on the card
+and restarts. Games, saves and the panel's wiring (`config.txt`, `cmdline.txt`,
+`overlays/vedutaos-buttons.dtbo`) are left as they are. A USB pad's Select returns from a
 game, and its Start is the game's menu; the handheld's Select button is its menu too
 (reported as Start). In a game, Home returns
 to the dashboard; on the dashboard it does nothing. A keyboard stands in for the buttons:

@@ -57,6 +57,6 @@ func imageCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "vedutaos image:", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "image: %s\nkernel for QEMU: %s\nconsole for QEMU: %s\n", r.Image, r.Kernel, r.Initrd)
+	fmt.Fprintf(stdout, "image: %s\nkernel for QEMU: %s\nconsole for QEMU: %s\nboot files for updates: %s\n", r.Image, r.Kernel, r.Initrd, r.Boot)
 	return 0
 }

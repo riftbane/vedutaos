@@ -5,6 +5,7 @@ import (
 
 	"github.com/riftbane/veduta/v2/sim"
 	"github.com/riftbane/vedutaos/card"
+	"github.com/riftbane/vedutaos/update"
 	"github.com/riftbane/vedutaos/wifi"
 )
 
@@ -231,5 +232,49 @@ func TestKeyboardReachesEveryCharacter(t *testing.T) {
 		if !have[r] {
 			t.Errorf("%q cannot be typed", r)
 		}
+	}
+}
+
+// TestStepChannelAndUpdates: A on the channel switches it and asks for it to be kept; A on
+// INSTALL UPDATES opens the updates and asks for a look.
+func TestStepChannelAndUpdates(t *testing.T) {
+	s := State{Screen: Settings, SetSel: 1, Channel: update.Beta}
+	s, a := Step(s, press(sim.ButtonA))
+	if a != SetChannel || s.Channel != update.Stable {
+		t.Fatalf("A on the channel: action %v channel %s", a, s.Channel)
+	}
+	s, _ = Step(s, press(sim.ButtonDown))
+	s, a = Step(s, press(sim.ButtonA))
+	if a != CheckUpdate || s.Screen != Updates {
+		t.Fatalf("A on INSTALL UPDATES: action %v screen %v", a, s.Screen)
+	}
+}
+
+// TestStepUpdates: B stops a download but not an install; a finished install restarts the
+// console; a failed look can be tried again.
+func TestStepUpdates(t *testing.T) {
+	for _, c := range []struct {
+		state  update.State
+		button sim.Button
+		action Action
+		screen Screen
+	}{
+		{update.Downloading, sim.ButtonB, CancelUpdate, Updates},
+		{update.Checking, sim.ButtonCancel, CancelUpdate, Updates},
+		{update.Installing, sim.ButtonB, Stay, Updates},
+		{update.Installed, sim.ButtonB, Stay, Updates},
+		{update.UpToDate, sim.ButtonB, Stay, Settings},
+		{update.Failed, sim.ButtonA, CheckUpdate, Updates},
+		{update.UpToDate, sim.ButtonA, CheckUpdate, Updates},
+		{update.Downloading, sim.ButtonA, Stay, Updates},
+	} {
+		s := State{Screen: Updates, Update: update.Status{State: c.state}}
+		got, a := Step(s, press(c.button))
+		if a != c.action || got.Screen != c.screen {
+			t.Errorf("%d, %s: action %v screen %v, want %v %v", c.state, c.button, a, got.Screen, c.action, c.screen)
+		}
+	}
+	if _, a := Step(State{Screen: Updates, Update: update.Status{State: update.Restart}}, press()); a != Reboot {
+		t.Fatalf("an installed update: action %v, want a restart", a)
 	}
 }

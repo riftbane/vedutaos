@@ -15,6 +15,7 @@ import (
 	"github.com/riftbane/veduta/v2/sim"
 	"github.com/riftbane/veduta/v2/sprite"
 	"github.com/riftbane/vedutaos/card"
+	"github.com/riftbane/vedutaos/update"
 	"github.com/riftbane/vedutaos/wifi"
 )
 
@@ -23,11 +24,15 @@ type Action int
 
 // Actions.
 const (
-	Stay   Action = iota // keep showing the dashboard
-	Launch               // run the selected game
-	Quit                 // leave the dashboard: on the console, switch it off
-	Scan                 // look for Wi-Fi networks: the Wi-Fi screen opened, or Start asked again
-	Join                 // join Target, with the password typed (Keys.Text), or none
+	Stay         Action = iota // keep showing the dashboard
+	Launch                     // run the selected game
+	Quit                       // leave the dashboard: on the console, switch it off
+	Scan                       // look for Wi-Fi networks: the Wi-Fi screen opened, or Start asked again
+	Join                       // join Target, with the password typed (Keys.Text), or none
+	SetChannel                 // keep Channel, which the player just changed
+	CheckUpdate                // look for an update on Channel and install it
+	CancelUpdate               // stop the download under way
+	Reboot                     // restart the console: an update was installed
 )
 
 // Screen is what the dashboard shows.
@@ -39,6 +44,7 @@ const (
 	Settings               // the console's settings
 	WiFi                   // the networks in range
 	Password               // typing a network's password
+	Updates                // looking for, downloading and installing an update
 )
 
 func (s Screen) String() string {
@@ -49,6 +55,8 @@ func (s Screen) String() string {
 		return "wi-fi"
 	case Password:
 		return "password"
+	case Updates:
+		return "updates"
 	}
 	return "games"
 }
@@ -62,12 +70,14 @@ type State struct {
 	MenuSel int    // index of the selected entry of the menu
 
 	Screen  Screen
-	Version string       // VedutaOS's, shown in the settings
-	WiFi    wifi.Status  // what the Wi-Fi is doing, kept up to date by the loop
-	SetSel  int          // the selected setting
-	NetSel  int          // the selected network
-	Target  wifi.Network // the network being joined
-	Keys    Keyboard     // the password being typed
+	Version string         // VedutaOS's, shown in the settings
+	WiFi    wifi.Status    // what the Wi-Fi is doing, kept up to date by the loop
+	SetSel  int            // the selected setting
+	NetSel  int            // the selected network
+	Target  wifi.Network   // the network being joined
+	Keys    Keyboard       // the password being typed
+	Channel update.Channel // the software channel updates come from
+	Update  update.Status  // what the update is doing, kept up to date by the loop
 }
 
 // MenuItem is an entry of the console's menu.
@@ -79,8 +89,15 @@ type MenuItem struct {
 // Menu is what Start opens on the list of games.
 var Menu = []MenuItem{{"POWER OFF", Quit}}
 
+// The settings, in their order on the screen.
+const (
+	SettingWiFi    = "WI-FI"
+	SettingChannel = "SOFTWARE CHANNEL"
+	SettingUpdate  = "INSTALL UPDATES"
+)
+
 // SettingsItems are the settings, in their order on the screen.
-var SettingsItems = []string{"WI-FI"}
+var SettingsItems = []string{SettingWiFi, SettingChannel, SettingUpdate}
 
 // Step applies one tick of the console's buttons, the same whether they come from a pad,
 // the handheld's keys or a keyboard. The D-pad moves and A chooses on every screen; B, or
@@ -95,6 +112,8 @@ func Step(s State, in sim.Input) (State, Action) {
 		return stepWiFi(s, in)
 	case Password:
 		return stepPassword(s, in)
+	case Updates:
+		return stepUpdates(s, in)
 	}
 	if s.Menu {
 		n := len(Menu)
@@ -172,6 +191,9 @@ func Draw(b *sprite.Batch, r Resources, w, h int, s State) {
 		return
 	case Password:
 		d.password(s)
+		return
+	case Updates:
+		d.updates(s)
 		return
 	}
 	scale, cell, pad, rowH := d.scale, d.cell, d.pad, d.rowH

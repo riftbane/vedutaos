@@ -347,6 +347,9 @@ func (s *system) dashboard() {
 		} else {
 			err = run(games)
 		}
+		if errors.Is(err, errRestart) {
+			s.halt(syscall.LINUX_REBOOT_CMD_RESTART, "an update was installed")
+		}
 		if err == nil {
 			s.halt(syscall.LINUX_REBOOT_CMD_POWER_OFF, "the dashboard was left")
 		}
@@ -499,3 +502,15 @@ func (s *system) respawn(tty string) {
 		time.Sleep(time.Second)
 	}
 }
+
+// restartConsole restarts a console whose dashboard is init's child (a dashboard from the
+// card): init restarts the machine on TERM.
+func restartConsole() {
+	if os.Getppid() == 1 {
+		syscall.Kill(1, syscall.SIGTERM)
+		return
+	}
+	fmt.Fprintln(os.Stderr, "vshell: an update was installed: restart the console")
+}
+
+func syncDisks() { syscall.Sync() }

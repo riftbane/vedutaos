@@ -1,11 +1,13 @@
 package shell
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/riftbane/veduta/v2/gmath"
 	"github.com/riftbane/veduta/v2/sim"
 	"github.com/riftbane/veduta/v2/sprite"
+	"github.com/riftbane/vedutaos/update"
 	"github.com/riftbane/vedutaos/wifi"
 )
 
@@ -27,9 +29,19 @@ func stepSettings(s State, in sim.Input) (State, Action) {
 		s.SetSel = (s.SetSel + n - 1) % n
 	case in.JustPressed(sim.ButtonA):
 		switch SettingsItems[s.SetSel] {
-		case "WI-FI":
+		case SettingWiFi:
 			s.Screen, s.NetSel, s.Notice = WiFi, 0, ""
 			return s, Scan
+		case SettingChannel:
+			if s.Channel == update.Beta {
+				s.Channel = update.Stable
+			} else {
+				s.Channel = update.Beta
+			}
+			return s, SetChannel
+		case SettingUpdate:
+			s.Screen, s.Notice = Updates, ""
+			return s, CheckUpdate
 		}
 	}
 	return s, Stay
@@ -236,8 +248,12 @@ func (d *drawer) settings(s State) {
 		d.text(d.pad, y+d.scale, item, colText)
 		value := ""
 		switch item {
-		case "WI-FI":
+		case SettingWiFi:
 			value = wifiSummary(s.WiFi)
+		case SettingChannel:
+			value = channelName(s.Channel)
+		case SettingUpdate:
+			value = s.Version
 		}
 		room := (d.w-2*d.pad)/d.cell - len(item) - 2
 		d.right(d.w-d.pad, y+d.scale, clip(value, room), colDim)
@@ -246,6 +262,9 @@ func (d *drawer) settings(s State) {
 		d.text(d.pad, d.h-d.pad-3*d.cell, "VEDUTAOS "+s.Version, colDim)
 	}
 	footer := "A: OPEN   B: BACK"
+	if SettingsItems[min(s.SetSel, len(SettingsItems)-1)] == SettingChannel {
+		footer = "A: CHANGE   B: BACK"
+	}
 	if s.Notice != "" {
 		footer = s.Notice
 	}
@@ -442,6 +461,99 @@ func (d *drawer) password(s State) {
 	footer := "A: TYPE   B: DELETE   START: JOIN"
 	if s.Notice != "" {
 		footer = s.Notice
+	}
+	d.footer(footer, colNotice)
+}
+
+func channelName(c update.Channel) string {
+	if c == update.Beta {
+		return "BETA"
+	}
+	return "STABLE"
+}
+
+func stepUpdates(s State, in sim.Input) (State, Action) {
+	st := s.Update.State
+	if st == update.Restart {
+		return s, Reboot
+	}
+	switch {
+	case back(in):
+		switch st {
+		case update.Checking, update.Downloading:
+			return s, CancelUpdate
+		case update.Installing, update.Installed:
+			// the card is being written: no way out but the restart
+		default:
+			s.Screen = Settings
+		}
+	case in.JustPressed(sim.ButtonA) && (st == update.Failed || st == update.UpToDate):
+		return s, CheckUpdate
+	}
+	return s, Stay
+}
+
+// updateLines are what the updates screen says of an update, and whether it is bad news.
+func updateLines(st update.Status) (lines []string, bad bool) {
+	switch st.State {
+	case update.Checking:
+		return []string{"LOOKING FOR AN UPDATE"}, false
+	case update.UpToDate:
+		return []string{"UP TO DATE", "NEWEST ON THE CHANNEL: " + st.Version}, false
+	case update.Downloading:
+		l := "DOWNLOADING " + st.Version
+		if st.Total > 0 {
+			l += fmt.Sprintf(" %d%%", st.Done*100/st.Total)
+		}
+		return []string{l, fmt.Sprintf("%.1f OF %.1f MB", float64(st.Done)/1e6, float64(st.Total)/1e6)}, false
+	case update.Installing:
+		return []string{"INSTALLING " + st.Version, "DO NOT SWITCH THE CONSOLE OFF"}, false
+	case update.Installed, update.Restart:
+		return []string{st.Version + " INSTALLED", "RESTARTING"}, false
+	case update.Failed:
+		return []string{"COULD NOT UPDATE", strings.ToUpper(st.Err)}, true
+	}
+	return nil, false
+}
+
+func (d *drawer) updates(s State) {
+	d.header("UPDATES", "")
+	y := d.top
+	d.text(d.pad, y, "INSTALLED  "+s.Version, colText)
+	d.text(d.pad, y+d.rowH, "CHANNEL    "+channelName(s.Channel), colText)
+	lines, bad := updateLines(s.Update)
+	colour := colText
+	if bad {
+		colour = colNotice
+	}
+	room := (d.w - 2*d.pad) / d.cell
+	y += 3 * d.rowH
+	for i, l := range lines {
+		c := colour
+		if i > 0 && !bad {
+			c = colDim
+		}
+		// A reason can be long: it runs on over the lines below.
+		for len(l) > room && i > 0 {
+			d.text(d.pad, y, l[:room], c)
+			l, y = l[room:], y+d.rowH
+		}
+		d.text(d.pad, y, clip(l, room), c)
+		y += d.rowH
+	}
+	if s.Update.State == update.Downloading && s.Update.Total > 0 {
+		w := d.w - 2*d.pad
+		d.rect(d.pad, y+d.pad, w, d.cell, colPlaceholder)
+		d.rect(d.pad, y+d.pad, int(int64(w)*s.Update.Done/s.Update.Total), d.cell, colHeader)
+	}
+	footer := "B: BACK"
+	switch s.Update.State {
+	case update.Checking, update.Downloading:
+		footer = "B: STOP"
+	case update.Installing, update.Installed, update.Restart:
+		footer = ""
+	case update.Failed, update.UpToDate:
+		footer = "A: LOOK AGAIN   B: BACK"
 	}
 	d.footer(footer, colNotice)
 }

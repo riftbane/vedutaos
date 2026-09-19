@@ -1,6 +1,7 @@
 package image
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"debug/elf"
@@ -124,6 +125,39 @@ func TestBuild(t *testing.T) {
 	for _, p := range paths {
 		if strings.HasSuffix(strings.ToLower(p), "vmlinuz") || strings.HasPrefix(p, "/initrd.img") {
 			t.Errorf("the QEMU kernel does not belong on the card: %s", p)
+		}
+	}
+
+	// The boot files for updates: the card's files without its games.
+	boot := map[string]bool{}
+	bf, err := os.Open(r.Boot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bgz, err := gzip.NewReader(bf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	btr := tar.NewReader(bgz)
+	for {
+		h, err := btr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		boot[h.Name] = true
+	}
+	bf.Close()
+	for _, want := range []string{"kernel8.img", "initramfs_2712", "config.txt", "overlays/vedutaos-buttons.dtbo", "sunxi/initrd.img", "vedutaos/release", "start.elf"} {
+		if !boot[want] {
+			t.Errorf("%s lacks %s", BootName, want)
+		}
+	}
+	for name := range boot {
+		if strings.HasPrefix(name, "games/") {
+			t.Errorf("%s holds the game file %s", BootName, name)
 		}
 	}
 

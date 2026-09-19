@@ -12,10 +12,11 @@ import (
 	"github.com/riftbane/veduta/v2/gfx/soft"
 	"github.com/riftbane/veduta/v2/sprite"
 	"github.com/riftbane/vedutaos/card"
+	"github.com/riftbane/vedutaos/update"
 	"github.com/riftbane/vedutaos/wifi"
 )
 
-var update = flag.Bool("update-golden", false, "rewrite the reference images")
+var updateGolden = flag.Bool("update-golden", false, "rewrite the reference images")
 
 // render draws a dashboard exactly as the console will, and returns the frame. The
 // renderer is the engine's own, so what these images show is what the panel will show.
@@ -55,7 +56,7 @@ func golden(t *testing.T, name string, img *gfx.Image) {
 	if err := img.EncodePNG(&buf); err != nil {
 		t.Fatal(err)
 	}
-	if *update {
+	if *updateGolden {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +124,10 @@ func TestDrawGolden(t *testing.T) {
 		{"notice", State{Cards: games("Cave of Gems"), Notice: "GAME STOPPED: EXIT CODE 2"}},
 		{"menu", State{Cards: games("Cave of Gems", "Sky Race", "Tunnel"), Sel: 1, Menu: true}},
 		{"settings-row", State{Cards: games("Cave of Gems", "Sky Race"), Sel: 2}},
-		{"settings", State{Screen: Settings, Version: "v0.5.0-rc.9", WiFi: wifi.Status{State: wifi.Connected, SSID: "Home", IP: "192.168.1.23"}}},
+		{"settings", State{Screen: Settings, Version: "v0.5.0-rc.9", Channel: update.Beta, WiFi: wifi.Status{State: wifi.Connected, SSID: "Home", IP: "192.168.1.23"}}},
+		{"updates-downloading", State{Screen: Updates, Version: "v0.5.0-rc.9", Channel: update.Beta, Update: update.Status{State: update.Downloading, Version: "v0.5.0-rc.10", Done: 31_400_000, Total: 72_800_000}}},
+		{"updates-current", State{Screen: Updates, Version: "v0.5.0-rc.10", Channel: update.Stable, Update: update.Status{State: update.UpToDate, Version: "v0.4.1"}}},
+		{"updates-failed", State{Screen: Updates, Version: "v0.5.0-rc.9", Channel: update.Beta, Update: update.Status{State: update.Failed, Err: "Get \"https://api.github.com/repos/riftbane/vedutaos/releases\": dial tcp: lookup api.github.com: no such host"}}},
 		{"wifi", State{Screen: WiFi, NetSel: 1, WiFi: wifi.Status{State: wifi.Connected, SSID: "Home", IP: "192.168.1.23", Networks: []wifi.Network{
 			{SSID: "Home", Signal: -45, Security: wifi.PSK, Saved: true},
 			{SSID: "Vodafone-A1B2C3D4 with a very long name", Signal: -60, Security: wifi.PSK},
